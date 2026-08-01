@@ -888,6 +888,7 @@
           <div class="metric"><span>手の速さ</span><strong id="holdDuration">0.00</strong></div>
           <div class="metric"><span>確定を止めているもの</span><strong id="blockReason">---</strong></div>
           <div class="metric"><span>既知からの距離</span><strong id="distMetric">---</strong></div>
+          <div class="metric"><span>カメラ</span><strong id="camMetric">---</strong></div>
           <div class="metric"><span>確定した印</span><strong id="confirmedSign">---</strong></div>
           <div class="metric"><span>handsCount</span><strong id="handsCount">0</strong></div>
           <div class="metric"><span>handedness</span><strong id="handedness">---</strong></div>
@@ -929,6 +930,22 @@
 // 学習データ。2026-07-31収集、12印×100枚（leave-one-out k-NN 98.6%）。
 // 差し替えるときは tools/collect.html で撮り直してここに上書きする。
 const SAMPLE_JSON_URL = "./data/signs.json";
+
+// 学習データを撮ったときのカメラの縦横比。data/signs.json の trainAspect と一致させること。
+// MediaPipeは x を画像の幅、y を高さで正規化して返すため、カメラの縦横比が変わると
+// x:y の比が変わってしまう。normalizeHand は手の大きさで割る等方スケールなので
+// この歪みは補正できず、PCで集めたデータをスマホで使うと認識が崩れる
+// （実測: スマホ縦持ち相当で 100% → 75%）。
+// y を縦横比で割って「幅を単位とする等方座標」に直せば端末に依存しなくなる。
+const TRAIN_ASPECT = 4 / 3;
+
+// 実際に届いている映像の縦横比。要求した解像度どおりとは限らないので実測値を使う。
+// カメラ未起動時（テスト再生など）は歪みなしとみなす。
+function cameraAspect() {
+  const v = els.video;
+  if (v && v.videoWidth > 0 && v.videoHeight > 0) return v.videoWidth / v.videoHeight;
+  return TRAIN_ASPECT;
+}
 
 const SIGN_DEFS = [
   { id: "ne", jp: "子", romaji: "ne", jutsu: "影縛りの構え" },
@@ -1096,6 +1113,7 @@ const els = {
   stableEstimate: document.getElementById("stableEstimate"),
   holdDuration: document.getElementById("holdDuration"),
   distMetric: document.getElementById("distMetric"),
+  camMetric: document.getElementById("camMetric"),
   blockReason: document.getElementById("blockReason"),
   stopSpeedInput: document.getElementById("stopSpeedInput"),
   moveSpeedInput: document.getElementById("moveSpeedInput"),
@@ -1226,6 +1244,8 @@ async function startCamera() {
       height: 960
     });
     await state.camera.start();
+    reportCamera();
+    els.video.addEventListener("loadedmetadata", reportCamera);
     setStatus("カメラ起動完了。印を結んでください。");
   } catch (error) {
     console.error(error);
@@ -1390,8 +1410,10 @@ function featureInRoi(feature) {
   const y0 = rect.top / Math.max(1, rect.height);
   const x1 = (rect.left + rect.size) / Math.max(1, rect.width);
   const y1 = (rect.top + rect.size) / Math.max(1, rect.height);
+  // rawLandmarks は等方座標なので、画面上の位置に戻してから枠と比べる
+  const aspect = cameraAspect();
   const handCenters = (feature.rawLandmarks || []).map(hand => {
-    const center = hand.reduce((acc, p) => {
+    const center = hand.map(p => ({ x: p.x, y: p.y * aspect })).reduce((acc, p) => {
       acc.x += 1 - p.x;
       acc.y += p.y;
       return acc;
@@ -1407,6 +1429,23 @@ function featureInRoi(feature) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+// 実際に届いている映像の素性を出す。端末によって解像度も向きも変わるので、
+// おかしいときはまずここを見る。学習時とずれていても補正が効いていれば認識はできる。
+function reportCamera() {
+  const v = els.video;
+  if (!v || !v.videoWidth) {
+    els.camMetric.textContent = "---";
+    return;
+  }
+  const a = v.videoWidth / v.videoHeight;
+  const track = (v.srcObject && v.srcObject.getVideoTracks && v.srcObject.getVideoTracks()[0]) || null;
+  const facing = track && track.getSettings ? (track.getSettings().facingMode || "?") : "?";
+  const gap = a / TRAIN_ASPECT;
+  els.camMetric.textContent =
+    `${v.videoWidth}×${v.videoHeight} 比${a.toFixed(3)} / 学習比の${gap.toFixed(2)}倍 / ${facing}`;
+  addLog(`CAMERA ${v.videoWidth}x${v.videoHeight} aspect=${a.toFixed(4)} (学習=${TRAIN_ASPECT.toFixed(4)}) facing=${facing}`);
 }
 
 function handednessName(results, index) {
@@ -1459,9 +1498,14 @@ function fingerFeatures(hand) {
 }
 
 function extractFeature(results) {
-  const hands = results.multiHandLandmarks || [];
-  const handsCount = hands.length;
+  const rawHands = results.multiHandLandmarks || [];
+  const handsCount = rawHands.length;
   if (handsCount === 0) return null;
+
+  // 端末に依存しない等方座標へ。ここから先は全部この座標で計算する
+  // （速度の計算に使う rawLandmarks も含む）。
+  const aspect = cameraAspect();
+  const hands = rawHands.map(h => h.map(p => ({ x: p.x, y: p.y / aspect, z: p.z || 0 })));
 
   const items = hands.slice(0, 2).map((lm, idx) => ({
     handedness: handednessName(results, idx),

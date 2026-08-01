@@ -1,0 +1,2299 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>NARUTO印センサー</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <!-- 筆書体。123のunicode-rangeに分割配信されているので、実際に使う文字を含む
+       チャンクだけがDLされる。レシピに新しい漢字を足しても自動で効く。
+       他の候補に変えるときは、下のURLと :root の --brush の両方を差し替える:
+         Yuji+Syuku … 端正。小さい字でも読める（既定）
+         Yuji+Boku  … 太くて墨っぽい。迫力が出る
+         Yuji+Mai   … 崩し気味。動きはあるが小さい字はやや読みにくい -->
+  <link href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <style>
+    :root {
+      /* 印と術名だけ筆書体にする。数値やラベルは読みやすさ優先でサンセットのまま。
+         "Yuji Boku" / "Yuji Mai" に差し替え可。末尾はWindows/macの標準行書体。 */
+      --brush: "Yuji Syuku", "HGP行書体", "HG行書体", "Klee One", "Hiragino Mincho ProN", serif;
+      color-scheme: dark;
+      --bg: #090b0f;
+      --panel: #141821;
+      --panel2: #1d2430;
+      --ink: #f6f1e7;
+      --muted: #9ba6b8;
+      --line: #323b4a;
+      --red: #f45d48;
+      --orange: #ff9f2e;
+      --gold: #ffd166;
+      --cyan: #60d7d4;
+      --green: #65d986;
+      --danger: #ff6b6b;
+      --shadow: 0 22px 70px rgba(0,0,0,.45);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at 26% 8%, rgba(244,93,72,.16), transparent 28rem),
+        radial-gradient(circle at 84% 12%, rgba(96,215,212,.12), transparent 24rem),
+        linear-gradient(180deg, #07080b, #10131a 48%, #090b0f);
+      color: var(--ink);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+    body { padding-bottom: env(safe-area-inset-bottom); }
+    button, select, input {
+      font: inherit;
+      color: inherit;
+    }
+    button, select {
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #111720;
+      padding: 8px 10px;
+    }
+    button {
+      cursor: pointer;
+      font-weight: 800;
+    }
+    button.primary { background: var(--red); border-color: #ff8b72; color: #170706; }
+    button.fire { background: var(--orange); border-color: #ffca72; color: #1d0c00; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .app {
+      min-height: 100svh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+    header {
+      border-bottom: 1px solid rgba(255,255,255,.1);
+      background: rgba(7,8,11,.88);
+      backdrop-filter: blur(14px);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .top {
+      width: min(1440px, calc(100vw - 28px));
+      margin: 0 auto;
+      padding: 10px 0;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 14px;
+      align-items: center;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(18px, 2.5vw, 30px);
+      line-height: 1.1;
+    }
+    .sub {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 3px;
+      line-height: 1.45;
+    }
+    .topControls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: end;
+      gap: 8px;
+    }
+    main {
+      width: min(1440px, calc(100vw - 28px));
+      margin: 0 auto;
+      padding: 14px 0 18px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(360px, .75fr);
+      gap: 14px;
+      align-items: start;
+    }
+    .cameraBox {
+      position: relative;
+      overflow: hidden;
+      min-height: 420px;
+      aspect-ratio: 16 / 10;
+      background: #020304;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+    video, canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    video { transform: scaleX(-1); }
+    canvas {
+      z-index: 2;
+      pointer-events: none;
+    }
+    .scanlines {
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      pointer-events: none;
+      background:
+        linear-gradient(transparent 0 92%, rgba(255,255,255,.05) 92% 100%),
+        linear-gradient(90deg, rgba(96,215,212,.08), transparent 20%, transparent 80%, rgba(244,93,72,.08));
+      background-size: 100% 7px, 100% 100%;
+      mix-blend-mode: screen;
+      opacity: .5;
+    }
+    .roiBox {
+      position: absolute;
+      z-index: 5;
+      border: 2px solid rgba(255, 209, 102, .95);
+      background:
+        linear-gradient(90deg, rgba(255,209,102,.24) 1px, transparent 1px),
+        linear-gradient(rgba(255,209,102,.24) 1px, transparent 1px),
+        rgba(255, 209, 102, .05);
+      background-size: 33.333% 33.333%;
+      box-shadow: 0 0 0 999px rgba(0,0,0,.18), 0 0 24px rgba(255,159,46,.3);
+      cursor: move;
+      pointer-events: auto;
+      touch-action: none;
+    }
+    .roiBox.outside {
+      border-color: rgba(255,107,107,.95);
+      background:
+        linear-gradient(90deg, rgba(255,107,107,.24) 1px, transparent 1px),
+        linear-gradient(rgba(255,107,107,.24) 1px, transparent 1px),
+        rgba(255, 107, 107, .05);
+      box-shadow: 0 0 0 999px rgba(0,0,0,.2), 0 0 24px rgba(255,107,107,.28);
+    }
+    .roiHint {
+      position: absolute;
+      left: 8px;
+      top: 7px;
+      padding: 4px 7px;
+      border-radius: 6px;
+      background: rgba(0,0,0,.62);
+      color: var(--gold);
+      font-size: 11px;
+      font-weight: 900;
+      line-height: 1;
+      pointer-events: none;
+    }
+    .roiHandle {
+      position: absolute;
+      right: -7px;
+      bottom: -7px;
+      width: 18px;
+      height: 18px;
+      border: 2px solid #130a00;
+      border-radius: 50%;
+      background: var(--gold);
+      box-shadow: 0 0 16px rgba(255,209,102,.75);
+      cursor: nwse-resize;
+      pointer-events: auto;
+    }
+    .hud {
+      position: absolute;
+      inset: 0;
+      z-index: 6;
+      pointer-events: none;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      padding: 12px;
+    }
+    .hudTop {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 30px;
+      padding: 6px 10px;
+      border: 1px solid rgba(255,255,255,.16);
+      border-radius: 999px;
+      background: rgba(0,0,0,.55);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .centerReadout {
+      place-self: center;
+      text-align: center;
+      min-width: min(620px, 92%);
+      padding: 16px 18px;
+      border: 1px solid rgba(255,255,255,.16);
+      border-radius: 8px;
+      background: rgba(5,8,12,.58);
+      box-shadow: 0 16px 48px rgba(0,0,0,.32);
+      opacity: 0;
+      transform: translateY(8px) scale(.98);
+      transition: opacity .12s ease, transform .12s ease;
+    }
+    .centerReadout.show {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    .centerReadout .kana {
+      font-size: clamp(42px, 9vw, 104px);
+      line-height: 1;
+      font-weight: 950;
+      text-shadow: 0 0 22px rgba(255,159,46,.35);
+    }
+    .centerReadout .romaji {
+      color: var(--gold);
+      font-size: clamp(18px, 3vw, 32px);
+      font-weight: 900;
+      margin-top: 4px;
+    }
+    .charge {
+      width: min(440px, 100%);
+      height: 14px;
+      margin: 12px auto 0;
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(0,0,0,.55);
+    }
+    .charge > div {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--cyan), var(--gold), var(--orange));
+      transition: width .08s linear;
+    }
+    .statusLine {
+      align-self: end;
+      display: grid;
+      gap: 8px;
+    }
+    .status {
+      border: 1px solid rgba(255,255,255,.16);
+      border-radius: 8px;
+      background: rgba(0,0,0,.68);
+      padding: 10px 12px;
+      font-weight: 800;
+      line-height: 1.35;
+    }
+    .flash {
+      position: absolute;
+      inset: 0;
+      z-index: 8;
+      pointer-events: none;
+      opacity: 0;
+      background: radial-gradient(circle, rgba(255,255,255,.95), rgba(255,184,77,.38) 28%, transparent 64%);
+    }
+    .flash.fire {
+      animation: flash .55s ease-out;
+    }
+    @keyframes flash {
+      0% { opacity: 0; transform: scale(.8); }
+      20% { opacity: 1; }
+      100% { opacity: 0; transform: scale(1.16); }
+    }
+    .jutsuEffect {
+      position: absolute;
+      inset: 0;
+      z-index: 7;
+      pointer-events: none;
+      display: none;
+      overflow: hidden;
+    }
+    .jutsuEffect.active { display: block; }
+    .fireRing {
+      position: absolute;
+      left: 50%;
+      top: 52%;
+      width: 42vmin;
+      height: 42vmin;
+      border: 8px solid var(--elemColor, rgba(255,130,35,.84));
+      border-radius: 50%;
+      transform: translate(-50%, -50%) scale(.45);
+      box-shadow:
+        0 0 34px var(--elemColor, rgba(255,80,20,.9)),
+        inset 0 0 38px var(--elemGlow, rgba(255,218,110,.7));
+      animation: fireRing 1.3s ease-out forwards;
+    }
+    .fireWave {
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 50% 60%, var(--elemGlow, rgba(255,218,92,.9)), var(--elemColor, rgba(255,104,24,.64)) 22%, transparent 60%),
+        repeating-radial-gradient(circle at 50% 58%, rgba(255,255,255,.16) 0 8px, transparent 8px 18px);
+      animation: fireWave 1.25s ease-out forwards;
+      mix-blend-mode: screen;
+    }
+    .ember {
+      position: absolute;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--elemGlow, var(--gold));
+      box-shadow: 0 0 18px var(--elemColor, var(--orange));
+      animation: ember 1.2s ease-out forwards;
+    }
+    @keyframes fireRing {
+      to { transform: translate(-50%, -50%) scale(1.75); opacity: 0; }
+    }
+    @keyframes fireWave {
+      0% { opacity: 0; transform: scale(.75); }
+      18% { opacity: 1; }
+      100% { opacity: 0; transform: scale(1.28); }
+    }
+    @keyframes ember {
+      from { transform: translate(0, 0) scale(.8); opacity: 1; }
+      to { transform: translate(var(--dx), var(--dy)) scale(.15); opacity: 0; }
+    }
+    .jutsuText {
+      position: absolute;
+      inset: auto 18px 18%;
+      z-index: 9;
+      text-align: center;
+      display: none;
+      font-size: clamp(30px, 7vw, 86px);
+      font-weight: 950;
+      line-height: 1.05;
+      color: #fff6d8;
+      text-shadow: 0 0 12px #ff4a1f, 0 0 36px #ff9f2e, 0 8px 18px #000;
+    }
+    .jutsuText.active {
+      display: block;
+      animation: jutsuText 1.4s ease-out forwards;
+    }
+    @keyframes jutsuText {
+      0% { opacity: 0; transform: translateY(14px) scale(.92); }
+      18% { opacity: 1; transform: translateY(0) scale(1); }
+      78% { opacity: 1; }
+      100% { opacity: 0; transform: translateY(-8px) scale(1.06); }
+    }
+    .side {
+      display: grid;
+      gap: 12px;
+    }
+    .panel {
+      border: 1px solid rgba(255,255,255,.11);
+      border-radius: 8px;
+      background: rgba(20,24,33,.94);
+      padding: 12px;
+      min-width: 0;
+    }
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 16px;
+      line-height: 1.2;
+    }
+    .metricGrid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .metric {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0f131b;
+      padding: 8px;
+    }
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.2;
+    }
+    .metric strong {
+      display: block;
+      margin-top: 3px;
+      font-size: 18px;
+      line-height: 1.1;
+      overflow-wrap: anywhere;
+    }
+    .rows {
+      display: grid;
+      gap: 7px;
+    }
+    .scoreRow {
+      display: grid;
+      grid-template-columns: 88px 1fr 44px;
+      gap: 8px;
+      align-items: center;
+      font-size: 13px;
+    }
+    .scoreName { font-weight: 850; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .miniBar {
+      height: 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #0b0e13;
+      overflow: hidden;
+    }
+    .miniBar > div {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--cyan), var(--green));
+    }
+    .scorePct {
+      color: var(--muted);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .controlGrid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      align-items: end;
+    }
+    label.control {
+      display: grid;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+    }
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
+    }
+    .segmented button.active {
+      background: var(--cyan);
+      color: #021313;
+      border-color: #a2fffb;
+    }
+    .sequenceSteps {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .step {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0f131b;
+      padding: 7px 4px;
+      text-align: center;
+      min-width: 0;
+    }
+    .step .jp {
+      font-size: 22px;
+      font-weight: 950;
+      line-height: 1;
+    }
+    .step .id {
+      color: var(--muted);
+      font-size: 10px;
+      margin-top: 3px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .step.current {
+      border-color: var(--gold);
+      box-shadow: 0 0 0 1px rgba(255,209,102,.4), 0 0 24px rgba(255,159,46,.22);
+    }
+    .step.done {
+      background: rgba(101,217,134,.14);
+      border-color: rgba(101,217,134,.72);
+    }
+    .waitingSign {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 12px;
+      align-items: center;
+    }
+    .waitingSign .big {
+      width: 76px;
+      height: 76px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255,209,102,.6);
+      border-radius: 8px;
+      background: #140d06;
+      color: var(--gold);
+      font-size: 42px;
+      font-weight: 950;
+    }
+    .recipeList { display: flex; flex-direction: column; gap: 6px; max-height: 340px; overflow-y: auto; }
+    .recipeRow { padding: 7px 9px; border-radius: 8px; background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06); opacity: .55; }
+    .recipeRow.lit { opacity: 1; background: rgba(120,160,255,.10); border-color: rgba(150,190,255,.35); }
+    .rHead { display: flex; align-items: center; gap: 7px; }
+    .rElem { flex: none; width: 19px; height: 19px; border-radius: 5px; color: #10131c; font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+    .rName { flex: 1; font-size: 13px; }
+    .rRemain { flex: none; font-size: 11px; opacity: .75; font-variant-numeric: tabular-nums; }
+    .rSigns { display: flex; gap: 3px; margin-top: 5px; flex-wrap: wrap; }
+    .sChip { font-size: 12px; padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,.06); }
+    .sChip.on { background: #ffd166; color: #10131c; font-weight: 700; }
+    /* 印の履歴が消えるまでの残り時間。積んでいる印がないときは出さない
+       （全幅の派手なバーが常時光っていると警告に見える） */
+    .timerBar {
+      height: 3px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.07);
+      overflow: hidden;
+      opacity: 0;
+      transition: opacity .18s ease;
+    }
+    .timerBar.on { opacity: 1; }
+    .timerBar > div {
+      height: 100%;
+      width: 100%;
+      background: linear-gradient(90deg, var(--gold), var(--danger));
+      transition: width .1s linear;
+    }
+    .counts {
+      max-height: 260px;
+      overflow: auto;
+      display: grid;
+      gap: 5px;
+      padding-right: 3px;
+    }
+    .countLine {
+      display: grid;
+      grid-template-columns: 92px 1fr;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .countLine strong {
+      color: var(--ink);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .debugBox {
+      display: none;
+      max-height: 320px;
+      overflow: auto;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      color: #c8d0dc;
+      background: #090c12;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .debugBox.show { display: block; }
+    .log {
+      display: grid;
+      gap: 4px;
+      max-height: 190px;
+      overflow: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      color: #c3cad7;
+    }
+    .log div {
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      padding-bottom: 4px;
+    }
+    .error {
+      color: #ffd5d5;
+      border-color: rgba(255,107,107,.55);
+      background: rgba(100,18,18,.32);
+    }
+    @media (max-width: 980px) {
+      .top { grid-template-columns: 1fr; }
+      .topControls { justify-content: start; }
+      main { grid-template-columns: 1fr; }
+      .cameraBox {
+        width: 100%;
+        min-width: 0;
+        min-height: 320px;
+      }
+    }
+    @media (max-width: 560px) {
+      .cameraBox {
+        aspect-ratio: auto;
+        height: min(72vh, 420px);
+      }
+      .hudTop,
+      .statusLine,
+      .centerReadout {
+        min-width: 0;
+        width: 100%;
+      }
+      .metricGrid { grid-template-columns: 1fr 1fr; }
+      .controlGrid { grid-template-columns: 1fr; }
+      .sequenceSteps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .scoreRow { grid-template-columns: 72px 1fr 42px; }
+    }
+
+    /* ===== UI整理: カメラを主役に、右カラムは術レシピ専用 ===== */
+    .devRow { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    /* .segmented は2列グリッド前提なので、3つ並ぶモード切替は上書きする */
+    .modeSwitch {
+      display: flex;
+      flex: none;
+      margin-right: 6px;
+      align-self: center;
+    }
+    .modeSwitch button { min-width: 56px; white-space: nowrap; }
+    .topControls { align-items: center; }
+
+    /* 結んだ印はカメラ映像の上に横並びで置く */
+    .signStrip {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      min-height: 34px;
+      align-items: center;
+    }
+    .signStrip .step {
+      padding: 3px 9px;
+      border-radius: 7px;
+      background: rgba(8,11,17,.72);
+      border: 1px solid rgba(255,255,255,.16);
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      animation: stepPop .18s ease-out;
+    }
+    .signStrip .step .jp { font-size: 19px; font-weight: 700; }
+    .signStrip .step .id { font-size: 10px; opacity: .6; }
+    .signStrip .step.empty { opacity: .4; }
+    @keyframes stepPop {
+      from { transform: translateY(6px) scale(.9); opacity: 0; }
+      to   { transform: none; opacity: 1; }
+    }
+    .stripMeta { display: grid; gap: 5px; }
+
+    /* 確定した瞬間だけ大きく出して、すぐ引く */
+    .centerReadout {
+      pointer-events: none;
+      min-width: 0;
+      width: auto;
+      padding: 10px 26px;
+      background: rgba(5,8,12,.72);
+    }
+    .centerReadout .kana { font-size: clamp(56px, 11vmin, 128px); line-height: 1.05; }
+    .centerReadout .romaji { font-size: 14px; opacity: .8; letter-spacing: .08em; }
+    .centerReadout.show { animation: confirmPop .22s cubic-bezier(.2,1.5,.4,1); }
+    @keyframes confirmPop {
+      from { transform: scale(.72); opacity: 0; }
+      to   { transform: scale(1); opacity: 1; }
+    }
+
+    /* 右カラム */
+    .recipePanel { position: sticky; top: 12px; }
+    .recipePanel h2 .hint { font-weight: 400; font-size: 11px; opacity: .55; margin-left: 6px; }
+    .recipePanel .recipeList { max-height: min(72vh, 720px); }
+    .liveNote { display: none; }
+    .liveNote .sub { font-size: 12px; opacity: .7; margin: 0 0 8px; }
+    .firedLog { display: flex; flex-direction: column; gap: 5px; }
+    .firedLog .fired {
+      font-size: 13px; padding: 6px 9px; border-radius: 7px;
+      background: rgba(255,255,255,.05); border-left: 3px solid var(--fc, #a9b4ff);
+    }
+    body.live .recipePanel { display: none; }
+    body.live .liveNote { display: block; }
+
+    /* 設定と数値は折りたたみへ */
+    .drawer {
+      width: min(1440px, calc(100vw - 28px));
+      margin: 0 auto 10px;
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 8px;
+      background: rgba(20,24,33,.7);
+    }
+    .drawer > summary {
+      cursor: pointer;
+      padding: 9px 14px;
+      font-size: 13px;
+      opacity: .8;
+      user-select: none;
+    }
+    .drawer > summary:hover { opacity: 1; }
+    .drawer[open] > summary { border-bottom: 1px solid rgba(255,255,255,.08); }
+    .drawerBody { padding: 12px 14px 14px; }
+    .drawerBody.twoCol { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+    .drawerBody h3 { font-size: 12px; opacity: .6; margin: 0 0 7px; font-weight: 600; }
+    .drawerBody h3 + * { margin-bottom: 14px; }
+    @media (max-width: 900px) {
+      .drawerBody.twoCol { grid-template-columns: 1fr; }
+    }
+
+    /* ===== 筆書体を当てる場所 ===== */
+    .centerReadout .kana,          /* 確定した印の大きな漢字 */
+    .signStrip .step .jp,          /* カメラ下の印の帯 */
+    .sChip,                        /* レシピの印チップ */
+    .rName,                        /* 術名 */
+    .firedLog .fired,              /* 本番モードの発動ログ */
+    .jutsuText {                   /* 発動時の術名 */
+      font-family: var(--brush);
+      font-weight: 400;
+    }
+    /* 筆書体は字面が小さめなので、小さい文字は少し大きくして釣り合わせる */
+    .sChip { font-size: 14px; }
+    .rName { font-size: 15px; }
+    .signStrip .step .jp { font-size: 22px; }
+    .firedLog .fired { font-size: 15px; }
+    .centerReadout .kana { letter-spacing: .04em; }
+    .siteFoot {
+      width: min(1440px, calc(100vw - 28px));
+      margin: 18px auto 0;
+      padding: 14px 2px 4px;
+      border-top: 1px solid rgba(255,255,255,.07);
+      font-size: 11px;
+      line-height: 1.8;
+      opacity: .42;
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="top">
+      <div>
+        <h1>NARUTO印センサー</h1>
+        <div class="sub">カメラに向かって印を結ぶと忍術が発動します。15種を同時に待ち受けていて、順番の縛りはありません。</div>
+      </div>
+      <div class="topControls">
+        <div class="segmented modeSwitch">
+          <button id="practiceMode" class="active">練習</button>
+          <button id="liveMode">本番</button>
+          <button id="directMode">印だけ</button>
+        </div>
+        <button id="startCamera" class="primary">カメラ開始</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="cameraBox">
+      <video id="video" autoplay muted playsinline webkit-playsinline></video>
+      <canvas id="canvas"></canvas>
+      <div class="scanlines"></div>
+      <div id="roiBox" class="roiBox" title="印を結ぶ領域。ドラッグで移動、右下の丸でサイズ変更。">
+        <div class="roiHint">印領域</div>
+        <div id="roiHandle" class="roiHandle" title="領域サイズ変更"></div>
+      </div>
+      <div class="hud">
+        <div class="hudTop">
+          <div class="pill">検出 <span id="handsBadge">0手</span></div>
+          <div class="pill" id="modePill"><span id="modeBadge">練習</span></div>
+        </div>
+        <!-- 確定した瞬間だけ出す。認識中の途中経過は出さない（チラついて疲れる） -->
+        <div id="centerReadout" class="centerReadout">
+          <div id="centerKana" class="kana">---</div>
+          <div id="centerRomaji" class="romaji">---</div>
+          <div id="centerSub"></div>
+        </div>
+        <div class="statusLine">
+          <!-- 結んだ印はカメラの上に置く。「いま何を積んだか」は映像と一緒に見たい -->
+          <div id="sequenceSteps" class="signStrip"></div>
+          <div class="stripMeta">
+            <div id="sequenceStatus" class="sub">印を結んでください</div>
+            <div class="timerBar"><div id="timerFill"></div></div>
+          </div>
+          <div id="status" class="status">JSONとMediaPipeを準備しています。</div>
+        </div>
+      </div>
+      <div id="flash" class="flash"></div>
+      <div id="jutsuEffect" class="jutsuEffect"><div class="fireWave"></div><div class="fireRing"></div></div>
+      <div id="jutsuText" class="jutsuText">火遁・豪火球の術！</div>
+    </section>
+
+    <aside class="side">
+      <!-- 右カラムは術レシピ専用。設定や数値は下の折りたたみに追い出した -->
+      <section class="panel recipePanel" id="recipePanel">
+        <h2>待ち受け中の術 <span class="hint" id="recipeHint"></span></h2>
+        <div id="recipeList" class="recipeList"></div>
+      </section>
+      <section class="panel liveNote" id="liveNote">
+        <h2>本番モード</h2>
+        <p class="sub">レシピは伏せています。結んだ印はカメラ下に出ます。</p>
+        <div id="firedLog" class="firedLog"></div>
+      </section>
+    </aside>
+  </main>
+
+  <details class="drawer">
+    <summary>設定</summary>
+    <div class="drawerBody">
+      <div class="devRow">
+        <button id="reloadSamples">JSON再読込</button>
+        <button id="loadJsonButton">JSON手動読込</button>
+        <input id="jsonFile" type="file" accept="application/json" hidden />
+        <button id="toggleDebug">Debug OFF</button>
+      </div>
+      <div class="controlGrid"><div class="controlGrid">
+          <label class="control">kNN k値
+            <select id="kSelect">
+              <option value="5">5</option>
+              <option value="7">7</option>
+            </select>
+          </label>
+          <label class="control">安定化フレーム
+            <input id="windowInput" type="number" min="2" max="20" value="4" />
+          </label>
+          <label class="control">静止判定ms
+            <input id="confirmInput" type="number" min="40" max="600" step="10" value="100" />
+          </label>
+          <label class="control">平均スコア閾値
+            <input id="scoreInput" type="number" min="0.3" max="0.95" step="0.05" value="0.60" />
+          </label>
+          <label class="control">静止とみなす速さ
+            <input id="stopSpeedInput" type="number" min="0.2" max="3" step="0.1" value="0.8" />
+          </label>
+          <label class="control">移行とみなす速さ
+            <input id="moveSpeedInput" type="number" min="0.5" max="6" step="0.1" value="2.0" />
+          </label>
+          <label class="control">未知判定の距離(2手)
+            <input id="maxDistInput" type="number" min="1" max="10" step="0.5" value="4.0" />
+          </label>
+          <label class="control">未知判定の距離(1手)
+            <input id="maxDist1Input" type="number" min="0.5" max="10" step="0.5" value="2.5" />
+          </label>
+          <label class="control">履歴の保持
+            <select id="sequenceTime">
+              <option value="3000">3秒</option>
+              <option value="5000" selected>5秒</option>
+              <option value="8000">8秒</option>
+              <option value="15000">15秒</option>
+            </select>
+          </label>
+          <label class="control">印領域
+            <button id="toggleRoi">ON</button>
+          </label>
+          <label class="control">領域X
+            <input id="roiXInput" type="range" min="10" max="90" value="50" />
+          </label>
+          <label class="control">領域Y
+            <input id="roiYInput" type="range" min="10" max="90" value="50" />
+          </label>
+          <label class="control">領域サイズ
+            <input id="roiSizeInput" type="range" min="25" max="85" value="52" />
+          </label>
+          <label class="control">領域リセット
+            <button id="resetRoi">中央正方形</button>
+          </label>
+        </div></div>
+    </div>
+  </details>
+
+  <details class="drawer">
+    <summary>認識の中身（詰まったときに開く）</summary>
+    <div class="drawerBody twoCol">
+      <div>
+        <h3>認識状態</h3>
+        <div class="metricGrid">
+          <div class="metric"><span>現在フレーム</span><strong id="frameEstimate">---</strong></div>
+          <div class="metric"><span>安定化後</span><strong id="stableEstimate">---</strong></div>
+          <div class="metric"><span>手の速さ</span><strong id="holdDuration">0.00</strong></div>
+          <div class="metric"><span>確定を止めているもの</span><strong id="blockReason">---</strong></div>
+          <div class="metric"><span>既知からの距離</span><strong id="distMetric">---</strong></div>
+          <div class="metric"><span>確定した印</span><strong id="confirmedSign">---</strong></div>
+          <div class="metric"><span>handsCount</span><strong id="handsCount">0</strong></div>
+          <div class="metric"><span>handedness</span><strong id="handedness">---</strong></div>
+          <div class="metric"><span>vector</span><strong id="vectorLength">---</strong></div>
+        </div>
+      </div>
+      <div>
+        <h3>トップ候補</h3>
+        <div id="topCandidates" class="rows"></div>
+      </div>
+    </div>
+  </details>
+
+  <details class="drawer">
+    <summary>ログ / データ / Debug</summary>
+    <div class="drawerBody twoCol">
+      <div>
+        <h3>認識ログ</h3>
+        <div id="recognitionLog" class="log"></div>
+        <h3>Debug</h3>
+        <div id="debugBox" class="debugBox"></div>
+      </div>
+      <div>
+        <h3>サンプル数</h3>
+        <div id="sampleCounts" class="counts"></div>
+      </div>
+    </div>
+  </details>
+
+  <footer class="siteFoot">
+    個人が趣味で作った二次創作です。『NARUTO -ナルト-』は岸本斉史先生の作品であり、
+    集英社および権利者に帰属します。本デモは原作・出版社・アニメ制作者とは関係がなく、
+    公式のものではありません。非営利で、原作の素材は使用していません。
+  </footer>
+</div>
+
+<script src="./data/recipes.js"></script>
+<script>
+// 学習データ。2026-07-31収集、12印×100枚（leave-one-out k-NN 98.6%）。
+// 差し替えるときは tools/collect.html で撮り直してここに上書きする。
+const SAMPLE_JSON_URL = "./data/signs.json";
+
+const SIGN_DEFS = [
+  { id: "ne", jp: "子", romaji: "ne", jutsu: "影縛りの構え" },
+  { id: "ushi", jp: "丑", romaji: "ushi", jutsu: "土遁・岩盾" },
+  { id: "tora", jp: "寅", romaji: "tora", jutsu: "火遁・烈火" },
+  { id: "u", jp: "卯", romaji: "u", jutsu: "瞬身準備" },
+  { id: "tatsu", jp: "辰", romaji: "tatsu", jutsu: "水遁・龍脈" },
+  { id: "mi", jp: "巳", romaji: "mi", jutsu: "チャクラ集中" },
+  { id: "uma", jp: "午", romaji: "uma", jutsu: "炎強化" },
+  { id: "hitsuji", jp: "未", romaji: "hitsuji", jutsu: "印結び加速" },
+  { id: "saru", jp: "申", romaji: "saru", jutsu: "雷光移動" },
+  { id: "tori", jp: "酉", romaji: "tori", jutsu: "風切り" },
+  { id: "inu", jp: "戌", romaji: "inu", jutsu: "防御結界" },
+  { id: "i", jp: "亥", romaji: "i", jutsu: "回復補助" },
+  { id: "transition", jp: "遷移", romaji: "transition", jutsu: "補助クラス" },
+  { id: "none", jp: "印以外", romaji: "none", jutsu: "棄却クラス" }
+];
+
+const DIRECT_SIGNS = SIGN_DEFS.filter(s => s.id !== "transition").map(s => s.id);
+
+// 印ごとの「静止とみなす速さ」の許容倍率。
+// 印を保持したまま連写したデータ（各印5バースト×約20枚）で、フレーム間に
+// ランドマークがどれだけ動くかを実測して求めた。手を止めていても
+// MediaPipeの推定が揺れる量は印によって大きく違う。
+//   亥 0.3697 / 申 0.1147 / 丑 0.0955 ... 酉 0.0453（全印の中央値 0.0695）
+// 亥は指が組み合って隠れるため推定が定まらず、他印の5.3倍暴れる。
+// 一律のしきい値では亥だけ永久に静止と判定されないので、実測比で緩める。
+// 巳・子・未・午・酉などは中央値より静かなので 1.0 のまま（体感を変えない）。
+const SIGN_SPEED_TOLERANCE = {
+  i: 5.32, saru: 1.65, ushi: 1.37, tatsu: 1.19, inu: 1.18, tora: 1.06,
+  u: 1.0, ne: 1.0, hitsuji: 1.0, mi: 1.0, uma: 1.0, tori: 1.0
+};
+
+function speedToleranceFor(label) {
+  return SIGN_SPEED_TOLERANCE[label] || 1.0;
+}
+
+const RECIPE_MAX_LEN = Math.max(...JUTSU_RECIPES.map(r => r.signs.length));
+
+// 直近の確定印の末尾に一致するレシピを返す。複数一致したら長い方を採る。
+function matchRecipe(history) {
+  const tail = history.map(h => h.label);
+  let best = null;
+  for (const r of JUTSU_RECIPES) {
+    const n = r.signs.length;
+    if (tail.length < n) continue;
+    const slice = tail.slice(tail.length - n);
+    if (slice.every((s, i) => s === r.signs[i])) {
+      if (!best || n > best.signs.length) best = r;
+    }
+  }
+  return best;
+}
+
+// 各レシピが「あと何印で成立するか」。末尾からの最長前方一致で測る。
+function recipeProgress(history, recipe) {
+  const tail = history.map(h => h.label);
+  for (let k = Math.min(recipe.signs.length, tail.length); k > 0; k--) {
+    const slice = tail.slice(tail.length - k);
+    if (slice.every((s, i) => s === recipe.signs[i])) {
+      return { matched: k, remaining: recipe.signs.length - k };
+    }
+  }
+  return { matched: 0, remaining: recipe.signs.length };
+}
+
+const DEFAULTS = {
+  k: 5,
+  stabilityWindow: 4,       // 静止直後の数フレームだけ見る。長い平滑化は反応を殺す
+  settleMs: 100,            // この時間だけ止まれば確定（旧: 1500msホールド）
+  confirmScore: 0.60,
+  sequenceMs: 5000,       // 転換2: 印と印の間がこれ以上空いたら履歴を捨てる
+  minSameHandPool: 8,
+  // --- 転換1: 動きゲート ---
+  stopSpeed: 0.8,           // 手の大きさ/秒。これ未満なら「止まっている」
+  moveSpeed: 2.0,           // これを超えたら「移行中」= 次の印を受け付ける
+  scaleFloorRatio: 1.2,     // 手の大きさの下限をRMS半径の何倍で支えるか。handScale参照
+  rearmMs: 60,              // 移行と認めるのに必要な継続時間
+  speedWindow: 2,           // 直近Nフレームの最大値で判定。EMA平滑化は減速に追いつかず印を落とす
+  // --- 転換3: ROIの代わりの「未知」判定 ---
+  maxKnnDist: 4.0,          // 2手検出時。k=5平均距離がこれより遠い手の形は印として採らない
+  maxKnnDist1Hand: 2.5      // 1手検出時。材料が45/104次元しかないので厳しくする
+};
+
+const state = {
+  camera: null,
+  hands: null,
+  samples: [],
+  sampleStats: new Map(),
+  classifierK: DEFAULTS.k,
+  stabilityWindow: DEFAULTS.stabilityWindow,
+  settleMs: DEFAULTS.settleMs,
+  confirmScore: DEFAULTS.confirmScore,
+  sequenceMs: DEFAULTS.sequenceMs,
+  stopSpeed: DEFAULTS.stopSpeed,
+  moveSpeed: DEFAULTS.moveSpeed,
+  maxKnnDist: DEFAULTS.maxKnnDist,
+  maxKnnDist1Hand: DEFAULTS.maxKnnDist1Hand,
+  knnLimit: DEFAULTS.maxKnnDist,
+  rejectedAs: null,
+  frameHistory: [],
+  stable: null,
+  // 転換1: 動きの状態機械。時間で待つのをやめ、動きの切れ目で確定する
+  motion: {
+    prevLandmarks: null,
+    prevAt: 0,
+    speed: 0,           // 手のひら幅/秒。直近数フレームの最大値
+    rawSpeed: 0,        // 今フレームの生の速さ
+    rawHist: [],
+    pendingDtMs: 0,     // このフレームの経過時間（静止判定は印が決まってから使う）
+    tolerance: 1,       // 現在の印の許容倍率
+    stopThreshold: 0,   // 実際に使われた静止しきい値
+    phase: "move",      // "move" = 移行中 / "still" = 静止中
+    stillMs: 0,
+    moveMs: 0,
+    armed: true         // 前回確定から一度でも動いたか。移行なしの二度撃ちを防ぐ
+  },
+  lastConfirmed: null,
+  lastConfirmAt: 0,
+  lastKnnDist: Infinity,
+  blockReason: "---",
+  mode: "sequence",
+  sequenceIndex: 0,
+  signHistory: [],          // 転換2: 確定した印の並び。全レシピをここに末尾一致させる
+  showRecipes: true,        // 練習モード=true / 本番モード=false
+  centerTimer: 0,
+  sequenceStartedAt: 0,
+  roi: {
+    enabled: false,     // 転換3: 檻はデフォルトOFF。未知判定が誤爆を止める
+    cx: 0.5,
+    cy: 0.5,
+    size: 0.52,
+    lastInside: null
+  },
+  roiDrag: null,
+  debug: false,
+  latestFeature: null,
+  latestRaw: null,
+  latestScores: [],
+  latestNeighbors: [],
+  logs: []
+};
+
+const els = {
+  video: document.getElementById("video"),
+  canvas: document.getElementById("canvas"),
+  status: document.getElementById("status"),
+  startCamera: document.getElementById("startCamera"),
+  reloadSamples: document.getElementById("reloadSamples"),
+  loadJsonButton: document.getElementById("loadJsonButton"),
+  jsonFile: document.getElementById("jsonFile"),
+  toggleDebug: document.getElementById("toggleDebug"),
+  handsBadge: document.getElementById("handsBadge"),
+  modeBadge: document.getElementById("modeBadge"),
+  roiBox: document.getElementById("roiBox"),
+  roiHandle: document.getElementById("roiHandle"),
+  centerReadout: document.getElementById("centerReadout"),
+  centerKana: document.getElementById("centerKana"),
+  centerRomaji: document.getElementById("centerRomaji"),
+  centerSub: document.getElementById("centerSub"),
+  flash: document.getElementById("flash"),
+  jutsuEffect: document.getElementById("jutsuEffect"),
+  jutsuText: document.getElementById("jutsuText"),
+  frameEstimate: document.getElementById("frameEstimate"),
+  stableEstimate: document.getElementById("stableEstimate"),
+  holdDuration: document.getElementById("holdDuration"),
+  distMetric: document.getElementById("distMetric"),
+  blockReason: document.getElementById("blockReason"),
+  stopSpeedInput: document.getElementById("stopSpeedInput"),
+  moveSpeedInput: document.getElementById("moveSpeedInput"),
+  maxDistInput: document.getElementById("maxDistInput"),
+  maxDist1Input: document.getElementById("maxDist1Input"),
+  confirmedSign: document.getElementById("confirmedSign"),
+  handsCount: document.getElementById("handsCount"),
+  handedness: document.getElementById("handedness"),
+  vectorLength: document.getElementById("vectorLength"),
+  topCandidates: document.getElementById("topCandidates"),
+  directMode: document.getElementById("directMode"),
+  practiceMode: document.getElementById("practiceMode"),
+  liveMode: document.getElementById("liveMode"),
+  recipeHint: document.getElementById("recipeHint"),
+  firedLog: document.getElementById("firedLog"),
+  kSelect: document.getElementById("kSelect"),
+  windowInput: document.getElementById("windowInput"),
+  confirmInput: document.getElementById("confirmInput"),
+  scoreInput: document.getElementById("scoreInput"),
+  sequenceTime: document.getElementById("sequenceTime"),
+  toggleRoi: document.getElementById("toggleRoi"),
+  resetRoi: document.getElementById("resetRoi"),
+  roiXInput: document.getElementById("roiXInput"),
+  roiYInput: document.getElementById("roiYInput"),
+  roiSizeInput: document.getElementById("roiSizeInput"),
+  sequenceSteps: document.getElementById("sequenceSteps"),
+  sequenceStatus: document.getElementById("sequenceStatus"),
+  recipeList: document.getElementById("recipeList"),
+  timerFill: document.getElementById("timerFill"),
+  sampleCounts: document.getElementById("sampleCounts"),
+  recognitionLog: document.getElementById("recognitionLog"),
+  debugBox: document.getElementById("debugBox")
+};
+
+function signDef(id) {
+  return SIGN_DEFS.find(s => s.id === id) || { id, jp: id, romaji: id, jutsu: "---" };
+}
+
+function signText(id) {
+  const s = signDef(id);
+  return `${s.romaji} / ${s.jp}`;
+}
+
+function setStatus(message, isError = false) {
+  els.status.textContent = message;
+  els.status.classList.toggle("error", isError);
+}
+
+async function loadSamplesFromUrl() {
+  setStatus("収集済みJSONを読み込んでいます。");
+  try {
+    const res = await fetch(SAMPLE_JSON_URL, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    ingestSamples(json);
+    setStatus(`JSON読込完了: ${state.samples.length} samples`);
+  } catch (error) {
+    console.error(error);
+    setStatus(`JSON読込に失敗しました: ${error.message}。localhostで開くか、JSON手動読込を使ってください。`, true);
+  }
+}
+
+function ingestSamples(json) {
+  const rawSamples = Array.isArray(json) ? json : json.samples;
+  if (!Array.isArray(rawSamples)) throw new Error("samples配列が見つかりません");
+
+  state.samples = rawSamples
+    .filter(s => s && s.label && Array.isArray(s.vector))
+    .map(s => ({
+      label: s.label,
+      handsCount: Number(s.handsCount || s.vector[0] || 0),
+      handedness: s.handedness || "",
+      vector: s.vector.map(Number).filter(Number.isFinite)
+    }))
+    .filter(s => s.vector.length > 0);
+
+  buildSampleStats();
+  renderSampleCounts();
+  renderTopCandidates([]);
+}
+
+function buildSampleStats() {
+  state.sampleStats = new Map();
+  for (const sample of state.samples) {
+    if (!state.sampleStats.has(sample.label)) {
+      state.sampleStats.set(sample.label, { total: 0, one: 0, two: 0, other: 0 });
+    }
+    const stat = state.sampleStats.get(sample.label);
+    stat.total++;
+    if (sample.handsCount === 1) stat.one++;
+    else if (sample.handsCount === 2) stat.two++;
+    else stat.other++;
+  }
+}
+
+function renderSampleCounts() {
+  els.sampleCounts.innerHTML = "";
+  for (const sign of SIGN_DEFS) {
+    const stat = state.sampleStats.get(sign.id) || { total: 0, one: 0, two: 0, other: 0 };
+    const row = document.createElement("div");
+    row.className = "countLine";
+    row.innerHTML = `<strong>${sign.romaji} / ${sign.jp}</strong><span>total ${stat.total} / 1手 ${stat.one} / 2手 ${stat.two}${stat.other ? ` / other ${stat.other}` : ""}</span>`;
+    els.sampleCounts.appendChild(row);
+  }
+}
+
+async function startCamera() {
+  if (state.camera) return;
+  setStatus("MediaPipe Handsを初期化しています。");
+  els.startCamera.disabled = true;
+  try {
+    state.hands = new Hands({
+      locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+    state.hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.45,
+      minTrackingConfidence: 0.45
+    });
+    state.hands.onResults(onResults);
+
+    state.camera = new Camera(els.video, {
+      onFrame: async () => {
+        await state.hands.send({ image: els.video });
+      },
+      width: 1280,
+      height: 960
+    });
+    await state.camera.start();
+    setStatus("カメラ起動完了。印を結んでください。");
+  } catch (error) {
+    console.error(error);
+    state.camera = null;
+    els.startCamera.disabled = false;
+    setStatus(`カメラ起動に失敗しました: ${error.message}`, true);
+  }
+}
+
+function onResults(results) {
+  drawLandmarkOverlay(results);
+  const feature = extractFeature(results);
+  state.latestFeature = feature;
+
+  if (!feature) {
+    handleNoHands(results);
+    return;
+  }
+
+  const roiCheck = featureInRoi(feature);
+  renderRoi(roiCheck.inside);
+  if (!roiCheck.inside) {
+    handleOutsideRoi(feature, roiCheck);
+    return;
+  }
+
+  updateMotion(feature);   // 速さだけ先に出す。静止判定は印が決まってから
+
+  const mpScores = getMediaPipeScores(feature);
+  const tmScores = getTMScores(null);
+  const combined = combineScores(mpScores.ranked, tmScores, { feature });
+  const corrected = applyRuleCorrections(combined, feature, { mode: state.mode });
+
+  state.latestScores = corrected;
+  state.latestNeighbors = mpScores.neighbors;
+  state.latestRaw = mpScores;
+  state.lastKnnDist = mpScores.avgDist;
+
+  // 転換3: 既知の印から遠すぎる手の形は候補にしない（旧ROIの役割）
+  //
+  // しきい値は手数で変える。片手検出のとき特徴量104次元のうち45次元しか
+  // 埋まらず（もう片方の手と両手の位置関係が全部ゼロ）、判断材料が半分になる。
+  // 幸い1手サンプルはクラスタが締まっている（k=5平均距離の中央値0.46、p95=2.01）ので
+  // しきい値2.5でも本物の取りこぼしは2.3%どまり。緩い4.0のままだと、
+  // パーやチョキのような無関係な片手が巳や寅の圏内に入ってしまう。
+  state.knnLimit = feature.handsCount >= 2 ? state.maxKnnDist : state.maxKnnDist1Hand;
+  const known = mpScores.avgDist <= state.knnLimit;
+  const rawTop = corrected[0] || null;
+  // 「印ではない」クラスが1位なら、それは棄却であって次点の繰り上げではない
+  state.rejectedAs = known && rawTop && isRejectLabel(rawTop.label) ? rawTop.label : null;
+  const top = known && rawTop && !isRejectLabel(rawTop.label) ? rawTop : null;
+
+  updateFrameHistory(top, feature);
+  const stable = computeStableEstimate();
+  state.stable = stable;
+  const candidate = stable || top;
+  const motion = updateMotionPhase(candidate ? candidate.label : null);
+  state.blockReason = confirmBlockReason(feature, candidate, motion, known);
+  renderRecognition(feature, top, stable, known ? corrected : [], motion);
+  maybeConfirm(candidate, motion, known);
+  updateSequenceTimer();
+  renderDebug();
+}
+
+function handleNoHands(results) {
+  state.latestScores = [];
+  state.latestNeighbors = [];
+  state.frameHistory.push({ label: null, score: 0, handsCount: 0, at: performance.now() });
+  trimHistory();
+  renderRoi(null);
+  els.handsBadge.textContent = "0手";
+  els.handsCount.textContent = "0";
+  els.handedness.textContent = "---";
+  els.vectorLength.textContent = "---";
+  els.frameEstimate.textContent = "手なし";
+  els.stableEstimate.textContent = "---";
+  updateMotion(null);
+  updateMotionPhase(null);
+  state.blockReason = "手が見えていません";
+  els.blockReason.textContent = state.blockReason;
+  els.holdDuration.textContent = "0.00";
+  els.distMetric.textContent = "---";
+  renderTopCandidates([]);
+  setStatus("手を検出できません。");
+  updateSequenceTimer();
+  renderDebug();
+}
+
+function handleOutsideRoi(feature, roiCheck) {
+  state.latestScores = [];
+  state.latestNeighbors = [];
+  state.frameHistory.push({ label: null, score: 0, handsCount: feature.handsCount, at: performance.now() });
+  trimHistory();
+  const motion = updateMotion(feature);
+  els.handsBadge.textContent = `${feature.handsCount}手`;
+  els.handsCount.textContent = String(feature.handsCount);
+  els.handedness.textContent = feature.handedness || "---";
+  els.vectorLength.textContent = String(feature.vector.length);
+  els.frameEstimate.textContent = "領域外";
+  els.stableEstimate.textContent = "---";
+  els.holdDuration.textContent = motion.speed.toFixed(2);
+  renderTopCandidates([]);
+  const detail = roiCheck.handCenters.length
+    ? `手の中心を印領域に入れてください。`
+    : "印領域内に手がありません。";
+  setStatus(`領域外: ${detail}`);
+  updateSequenceTimer();
+  renderDebug();
+}
+
+function drawLandmarkOverlay(results) {
+  const rect = els.video.getBoundingClientRect();
+  const canvas = els.canvas;
+  canvas.width = Math.max(1, Math.round(rect.width * devicePixelRatio));
+  canvas.height = Math.max(1, Math.round(rect.height * devicePixelRatio));
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  ctx.clearRect(0, 0, rect.width, rect.height);
+
+  const hands = results.multiHandLandmarks || [];
+  if (!hands.length) return;
+  ctx.save();
+  ctx.translate(rect.width, 0);
+  ctx.scale(-1, 1);
+  for (const landmarks of hands) {
+    drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: "#60d7d4", lineWidth: 3 });
+    drawLandmarks(ctx, landmarks, { color: "#ffd166", lineWidth: 1, radius: 3 });
+  }
+  ctx.restore();
+}
+
+function roiRectPx() {
+  const box = els.video.getBoundingClientRect();
+  const size = Math.min(box.width, box.height) * state.roi.size;
+  const left = clamp(state.roi.cx * box.width - size / 2, 0, Math.max(0, box.width - size));
+  const top = clamp(state.roi.cy * box.height - size / 2, 0, Math.max(0, box.height - size));
+  return { left, top, size, width: box.width, height: box.height };
+}
+
+function renderRoi(isInside = state.roi.lastInside) {
+  if (!els.roiBox) return;
+  const rect = roiRectPx();
+  els.roiBox.style.display = state.roi.enabled ? "block" : "none";
+  els.roiBox.style.left = `${rect.left}px`;
+  els.roiBox.style.top = `${rect.top}px`;
+  els.roiBox.style.width = `${rect.size}px`;
+  els.roiBox.style.height = `${rect.size}px`;
+  els.roiBox.classList.toggle("outside", isInside === false);
+  els.toggleRoi.textContent = state.roi.enabled ? "ON" : "OFF";
+  els.roiXInput.value = String(Math.round(state.roi.cx * 100));
+  els.roiYInput.value = String(Math.round(state.roi.cy * 100));
+  els.roiSizeInput.value = String(Math.round(state.roi.size * 100));
+}
+
+function featureInRoi(feature) {
+  if (!state.roi.enabled) {
+    state.roi.lastInside = true;
+    return { inside: true, handCenters: [] };
+  }
+  const rect = roiRectPx();
+  const x0 = rect.left / Math.max(1, rect.width);
+  const y0 = rect.top / Math.max(1, rect.height);
+  const x1 = (rect.left + rect.size) / Math.max(1, rect.width);
+  const y1 = (rect.top + rect.size) / Math.max(1, rect.height);
+  const handCenters = (feature.rawLandmarks || []).map(hand => {
+    const center = hand.reduce((acc, p) => {
+      acc.x += 1 - p.x;
+      acc.y += p.y;
+      return acc;
+    }, { x: 0, y: 0 });
+    center.x /= Math.max(1, hand.length);
+    center.y /= Math.max(1, hand.length);
+    return center;
+  });
+  const inside = handCenters.length > 0 && handCenters.every(p => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1);
+  state.roi.lastInside = inside;
+  return { inside, handCenters, rect: { x0, y0, x1, y1 } };
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function handednessName(results, index) {
+  const h = results.multiHandedness && results.multiHandedness[index];
+  return h && h.label ? h.label : "unknown";
+}
+
+function normalizeHand(landmarks) {
+  const wrist = landmarks[0];
+  const midMcp = landmarks[9];
+  const scale = Math.hypot(midMcp.x - wrist.x, midMcp.y - wrist.y, (midMcp.z || 0) - (wrist.z || 0)) || 1e-6;
+  return landmarks.map(p => ({
+    x: (p.x - wrist.x) / scale,
+    y: (p.y - wrist.y) / scale,
+    z: ((p.z || 0) - (wrist.z || 0)) / scale
+  }));
+}
+
+function fingerFeatures(hand) {
+  const tips = [4, 8, 12, 16, 20];
+  const mcps = [2, 5, 9, 13, 17];
+  const pips = [3, 6, 10, 14, 18];
+  const out = [];
+
+  for (let i = 0; i < tips.length; i++) {
+    const tip = hand[tips[i]];
+    const mcp = hand[mcps[i]];
+    const pip = hand[pips[i]];
+    out.push(
+      Math.hypot(tip.x - mcp.x, tip.y - mcp.y, tip.z - mcp.z),
+      Math.hypot(tip.x - pip.x, tip.y - pip.y, tip.z - pip.z),
+      mcp.y - tip.y
+    );
+  }
+
+  for (let a = 0; a < tips.length; a++) {
+    for (let b = a + 1; b < tips.length; b++) {
+      const p = hand[tips[a]];
+      const q = hand[tips[b]];
+      out.push(Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z));
+    }
+  }
+
+  const xs = hand.map(p => p.x);
+  const ys = hand.map(p => p.y);
+  const w = Math.max(...xs) - Math.min(...xs);
+  const h = Math.max(...ys) - Math.min(...ys);
+  out.push(w, h, h / Math.max(w, 1e-6));
+  return out;
+}
+
+function extractFeature(results) {
+  const hands = results.multiHandLandmarks || [];
+  const handsCount = hands.length;
+  if (handsCount === 0) return null;
+
+  const items = hands.slice(0, 2).map((lm, idx) => ({
+    handedness: handednessName(results, idx),
+    raw: lm,
+    norm: normalizeHand(lm)
+  }));
+  items.sort((a, b) => a.raw[0].x - b.raw[0].x);
+
+  const vector = [handsCount];
+  for (let i = 0; i < 2; i++) {
+    if (items[i]) {
+      vector.push(1);
+      vector.push(...fingerFeatures(items[i].norm));
+      for (const idx of [0, 4, 8, 12, 16, 20]) {
+        vector.push(items[i].norm[idx].x, items[i].norm[idx].y, items[i].norm[idx].z);
+      }
+    } else {
+      vector.push(0);
+      const dummyLen = fingerFeatures(Array.from({ length: 21 }, () => ({ x: 0, y: 0, z: 0 }))).length + 18;
+      for (let k = 0; k < dummyLen; k++) vector.push(0);
+    }
+  }
+
+  if (items.length >= 2) {
+    const a = items[0].raw;
+    const b = items[1].raw;
+    const dist = (ia, ib) => Math.hypot(a[ia].x - b[ib].x, a[ia].y - b[ib].y, (a[ia].z || 0) - (b[ib].z || 0));
+    const centerAx = avg(a.map(p => p.x));
+    const centerAy = avg(a.map(p => p.y));
+    const centerBx = avg(b.map(p => p.x));
+    const centerBy = avg(b.map(p => p.y));
+    vector.push(
+      dist(0, 0),
+      dist(8, 8),
+      dist(12, 12),
+      dist(4, 4),
+      dist(20, 20),
+      centerBx - centerAx,
+      centerBy - centerAy,
+      Math.abs(centerBx - centerAx),
+      Math.abs(centerBy - centerAy)
+    );
+  } else {
+    for (let i = 0; i < 9; i++) vector.push(0);
+  }
+
+  return {
+    handsCount,
+    vector,
+    handedness: items.map(x => x.handedness).join("|"),
+    rawLandmarks: items.map(x => x.raw.map(p => ({ x: p.x, y: p.y, z: p.z || 0 })))
+  };
+}
+
+function avg(arr) {
+  return arr.reduce((sum, x) => sum + x, 0) / Math.max(1, arr.length);
+}
+
+function euclideanDistance(a, b) {
+  const n = Math.min(a.length, b.length);
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const d = (a[i] || 0) - (b[i] || 0);
+    sum += d * d;
+  }
+  return Math.sqrt(sum);
+}
+
+function getMediaPipeScores(feature) {
+  if (!feature || state.samples.length === 0) {
+    return { ranked: [], neighbors: [], poolSize: 0, sameHandPool: 0 };
+  }
+
+  const sameHand = state.samples.filter(s => s.handsCount === feature.handsCount);
+  const pool = sameHand.length >= DEFAULTS.minSameHandPool ? sameHand : state.samples;
+  const neighbors = pool
+    .map(sample => ({
+      label: sample.label,
+      distance: euclideanDistance(feature.vector, sample.vector),
+      handsCount: sample.handsCount,
+      handedness: sample.handedness
+    }))
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, Math.min(state.classifierK, pool.length));
+
+  const scores = new Map();
+  for (const n of neighbors) {
+    const weight = 1 / Math.max(n.distance, 1e-6);
+    scores.set(n.label, (scores.get(n.label) || 0) + weight);
+  }
+  const total = [...scores.values()].reduce((sum, x) => sum + x, 0) || 1;
+  const ranked = [...scores.entries()]
+    .map(([label, score]) => ({ label, score: score / total }))
+    .sort((a, b) => b.score - a.score);
+
+  // 転換3: 既知の印からどれだけ遠いか。遠ければ「これは印ではない」
+  const avgDist = neighbors.length
+    ? neighbors.reduce((s, n) => s + n.distance, 0) / neighbors.length
+    : Infinity;
+
+  return { ranked, neighbors, avgDist, poolSize: pool.length, sameHandPool: sameHand.length };
+}
+
+function handCentroid(hand) {
+  let x = 0, y = 0;
+  for (const p of hand) { x += p.x; y += p.y; }
+  return { x: x / hand.length, y: y / hand.length };
+}
+
+// 手の大きさ。速度をこれで割ることでカメラからの距離に依らなくする。
+//
+// 基本は 手首→中指つけ根(span)。ただし亥のように指を組んで手が潰れて見える印では
+// この線分がほぼ潰れ（亥の中央値0.049。未は0.220）、同じ揺れが4倍速く見えて
+// 永久に静止と判定されない。
+//
+// かといってRMS半径に丸ごと置き換えるのは誤り。RMSはspanより系統的に小さく、
+// その比は印ごとに0.69〜2.64とバラバラ（巳は2.64＝最悪、卯は1.32＝最小）。
+// 置き換えると全印の速度が印ごとに違う倍率で膨らみ、しきい値の意味が壊れる。
+//
+// 正しくは span を主役に置き、潰れたときだけ RMS で下から支える。
+// 係数1.2なら底上げが効くのは亥と辰だけで、他の10印は一切変わらない。
+function handScale(hand) {
+  const c = handCentroid(hand);
+  let sum = 0;
+  for (const p of hand) sum += (p.x - c.x) ** 2 + (p.y - c.y) ** 2;
+  const rms = Math.sqrt(sum / hand.length);
+  const span = Math.hypot(hand[9].x - hand[0].x, hand[9].y - hand[0].y);
+  return Math.max(0.02, span, rms * DEFAULTS.scaleFloorRatio);
+}
+
+// ===== 転換1: 手の動きの速さ =====
+// 手のひら幅（手首→中指つけ根）で割るので、カメラからの距離に依らない。
+// 毎秒あたりに正規化するのでフレームレートにも依らない。
+function updateMotion(feature) {
+  const m = state.motion;
+  const now = performance.now();
+  const cur = feature ? feature.rawLandmarks : null;
+
+  if (!cur || !cur.length) {
+    m.prevLandmarks = null;
+    m.prevAt = 0;
+    m.speed = 0;
+    m.rawSpeed = 0;
+    m.rawHist = [];
+    m.phase = "move";
+    m.stillMs = 0;
+    m.moveMs = 0;
+    m.armed = true;
+    return m;
+  }
+
+  const prev = m.prevLandmarks;
+  const dt = m.prevAt ? (now - m.prevAt) / 1000 : 0;
+
+  if (prev && dt > 0.001 && dt < 0.5) {
+    // 手はX座標順に並んでいるので、手数が同じなら添字がそのまま対応する。
+    // 重心の近さで対応付け直すと、両手が重なる印（巳・亥など）で左右が
+    // 入れ替わりうるので、余計なことはしない。
+    //
+    // MediaPipeは同じ印でも1手/2手を行き来する（両手が重なると片手しか返らない）。
+    // 手数が変わったフレームだけは添字がずれるため、重心の近い順に1対1で
+    // 対応付け、現れた/消えた手は速度計算から外す。
+    const pairs = [];
+    if (prev.length === cur.length) {
+      for (let i = 0; i < cur.length; i++) {
+        if (cur[i] && prev[i] && cur[i].length === prev[i].length) pairs.push([prev[i], cur[i]]);
+      }
+    } else {
+      const cand = [];
+      for (let ci = 0; ci < cur.length; ci++) {
+        const b = cur[ci];
+        if (!b || !b.length) continue;
+        const bc = handCentroid(b);
+        for (let pi = 0; pi < prev.length; pi++) {
+          const a = prev[pi];
+          if (!a || a.length !== b.length) continue;
+          const ac = handCentroid(a);
+          cand.push({ ci, pi, d: Math.hypot(ac.x - bc.x, ac.y - bc.y) });
+        }
+      }
+      cand.sort((p, q) => p.d - q.d);
+      const usedCur = new Set();
+      const usedPrev = new Set();
+      for (const c of cand) {
+        if (usedCur.has(c.ci) || usedPrev.has(c.pi)) continue;
+        if (c.d > handScale(cur[c.ci]) * 2) continue;  // 遠すぎる = 現れたばかりの手
+        usedCur.add(c.ci);
+        usedPrev.add(c.pi);
+        pairs.push([prev[c.pi], cur[c.ci]]);
+      }
+    }
+
+    let sum = 0;
+    let count = 0;
+    for (const [a, b] of pairs) {
+      const scale = handScale(b);
+      for (let i = 0; i < b.length; i++) {
+        sum += Math.hypot(b[i].x - a[i].x, b[i].y - a[i].y) / scale;
+        count++;
+      }
+    }
+    // 対応する手が1つも取れなかったフレームは「観測できなかった」だけ。
+    // 静止の積み上げを壊さず、そのまま持ち越す。
+    if (count > 0) {
+      const raw = (sum / count) / dt;
+      m.rawSpeed = raw;
+      m.rawHist.push(raw);
+      while (m.rawHist.length > DEFAULTS.speedWindow) m.rawHist.shift();
+      // 最大値なので「直近Nフレームすべてが遅い」ときだけ静止になる。
+      // EMAと違って減速に一切遅れない = 印を取りこぼさない。
+      m.speed = Math.max(...m.rawHist);
+      m.pendingDtMs = dt * 1000;
+    } else {
+      m.stillMs += dt * 1000;   // 手数が入れ替わっただけ。静止は途切れていない
+      m.pendingDtMs = 0;
+    }
+  } else {
+    m.pendingDtMs = 0;
+  }
+
+  m.prevLandmarks = cur;
+  m.prevAt = now;
+  return m;
+}
+
+// 静止/移行の判定は、どの印を見ているか分かってから行う。
+// 印ごとに MediaPipe の推定の安定さが違うため（SIGN_SPEED_TOLERANCE 参照）。
+function updateMotionPhase(label) {
+  const m = state.motion;
+  const dtMs = m.pendingDtMs || 0;
+  m.tolerance = speedToleranceFor(label);
+  m.stopThreshold = state.stopSpeed * m.tolerance;
+  if (dtMs <= 0) return m;
+
+  if (m.speed < m.stopThreshold) {
+    m.stillMs += dtMs;
+    m.moveMs = 0;
+    m.phase = "still";
+  } else if (m.rawSpeed > state.moveSpeed * m.tolerance) {
+    m.moveMs += dtMs;
+    m.stillMs = 0;
+    m.phase = "move";
+    if (m.moveMs >= DEFAULTS.rearmMs) m.armed = true;  // 移行を見た → 次の印を受け付ける
+  } else {
+    m.stillMs = 0;
+    m.moveMs = 0;
+  }
+  return m;
+}
+
+// 確定を止めている条件を1つに絞って日本語で返す。
+// どのゲートで止まっているかが画面から分からないと、調整が当てずっぽうになる。
+function confirmBlockReason(feature, top, motion, known) {
+  if (!feature) return "手が見えていません";
+  if (!known) {
+    const hands = feature.handsCount >= 2 ? "2手" : "1手";
+    return `未知の形（距離 ${state.lastKnnDist.toFixed(1)} > ${state.knnLimit.toFixed(1)} / ${hands}）`;
+  }
+  if (state.rejectedAs) return `印ではない形（${state.rejectedAs}と判定）`;
+  if (!top) return "候補なし";
+  if (!motion.armed) return "一度ほどいてください（前の印のまま）";
+  if (motion.phase !== "still") {
+    return `まだ動いています（速さ ${motion.speed.toFixed(2)} > ${motion.stopThreshold.toFixed(2)}）`;
+  }
+  if (motion.stillMs < state.settleMs) {
+    return `静止中 ${Math.round(motion.stillMs)}/${Math.round(state.settleMs)}ms`;
+  }
+  const score = Number(top.avgScore ?? top.score ?? 0);
+  if (score < state.confirmScore) {
+    return `確信度不足（${score.toFixed(2)} < ${state.confirmScore.toFixed(2)}）`;
+  }
+  return "確定";
+}
+
+function getTMScores(croppedImage) {
+  return [];
+}
+
+function combineScores(mpScores, tmScores, context) {
+  const merged = new Map();
+  for (const s of mpScores || []) merged.set(s.label, (merged.get(s.label) || 0) + s.score);
+  for (const s of tmScores || []) merged.set(s.label, (merged.get(s.label) || 0) + s.score * 0.35);
+  const total = [...merged.values()].reduce((sum, x) => sum + x, 0) || 1;
+  return [...merged.entries()]
+    .map(([label, score]) => ({ label, score: score / total }))
+    .sort((a, b) => b.score - a.score);
+}
+
+// 「印ではない」クラスは捨てずに順位に残す。
+// 捨てると、本当は transition が1位でも次点の本物の印が繰り上がってしまい、
+// 誤爆を止めるどころか誤爆を作る。1位に来たら確定を止めるのが正しい使い方。
+function applyRuleCorrections(scores, feature, context) {
+  return scores.map(s => ({ ...s })).sort((a, b) => b.score - a.score);
+}
+
+const REJECT_LABELS = new Set(["transition", "none"]);
+
+function isRejectLabel(label) {
+  return REJECT_LABELS.has(label);
+}
+
+function updateFrameHistory(top, feature) {
+  state.frameHistory.push({
+    label: top ? top.label : null,
+    score: top ? top.score : 0,
+    handsCount: feature.handsCount,
+    at: performance.now()
+  });
+  trimHistory();
+}
+
+function trimHistory() {
+  while (state.frameHistory.length > state.stabilityWindow) state.frameHistory.shift();
+}
+
+function computeStableEstimate() {
+  const valid = state.frameHistory.filter(x => x.label);
+  if (!valid.length) return null;
+  const byLabel = new Map();
+  for (const item of valid) {
+    if (!byLabel.has(item.label)) byLabel.set(item.label, { label: item.label, count: 0, scoreSum: 0 });
+    const entry = byLabel.get(item.label);
+    entry.count++;
+    entry.scoreSum += item.score;
+  }
+  const ranked = [...byLabel.values()]
+    .map(x => ({ ...x, avgScore: x.scoreSum / Math.max(1, x.count), ratio: x.count / Math.max(1, state.frameHistory.length) }))
+    .sort((a, b) => b.count - a.count || b.avgScore - a.avgScore);
+  const best = ranked[0];
+  if (!best) return null;
+  return best;
+}
+
+// ===== 転換1の中心 =====
+// 「同じ答えを1.5秒待つ」のをやめ、「手が止まった瞬間」に即確定する。
+// 二度撃ちは時間クールダウンではなく「一度動くまで次を受け付けない」で防ぐ。
+// これが 印→移行→印→移行 という本来のリズムそのものになる。
+function maybeConfirm(candidate, motion, known) {
+  if (!candidate || !candidate.label || !known) return;
+  if (isRejectLabel(candidate.label)) return;
+  if (motion.phase !== "still") return;
+  if (motion.stillMs < state.settleMs) return;
+  if (!motion.armed) return;                       // 前の印から動いていない
+
+  const score = Number(candidate.avgScore ?? candidate.score ?? 0);
+  if (score < state.confirmScore) return;
+
+  const now = performance.now();
+  motion.armed = false;                            // 次は移行を挟むまで撃たない
+  state.lastConfirmAt = now;
+  state.lastConfirmed = candidate.label;
+  els.confirmedSign.textContent = signText(candidate.label);
+  addLog(`CONFIRM ${signText(candidate.label)} still=${Math.round(motion.stillMs)}ms score=${score.toFixed(2)} dist=${state.lastKnnDist.toFixed(2)}`);
+  triggerConfirm(candidate.label);
+  state.frameHistory = [];                         // 次の印を前の印に引きずらせない
+
+  if (state.mode === "sequence") {
+    advanceSequenceIfNeeded(candidate.label);
+  } else {
+    triggerDirectJutsu(candidate.label);
+  }
+}
+
+function resetHold() {
+  state.motion.stillMs = 0;
+  state.motion.moveMs = 0;
+  state.motion.armed = true;
+  state.motion.phase = "move";
+}
+
+function renderRecognition(feature, top, stable, ranked, motion) {
+  els.handsBadge.textContent = `${feature.handsCount}手`;
+  els.handsCount.textContent = String(feature.handsCount);
+  els.handedness.textContent = feature.handedness || "---";
+  els.vectorLength.textContent = String(feature.vector.length);
+  els.frameEstimate.textContent = top ? `${signText(top.label)} ${Math.round(top.score * 100)}%` : "---";
+  els.stableEstimate.textContent = stable ? `${signText(stable.label)} ${stable.count}/${state.stabilityWindow} ${Math.round(stable.avgScore * 100)}%` : "---";
+  els.holdDuration.textContent = `${motion.speed.toFixed(2)} / 上限 ${motion.stopThreshold.toFixed(2)}${motion.tolerance > 1 ? ` (${motion.tolerance}倍緩和)` : ""}`;
+  els.distMetric.textContent = Number.isFinite(state.lastKnnDist)
+    ? `${state.lastKnnDist.toFixed(2)} / 上限 ${state.knnLimit.toFixed(1)}`
+    : "---";
+  els.blockReason.textContent = state.blockReason;
+  renderTopCandidates(ranked.slice(0, 3));
+  setStatus(`${top ? signText(top.label) : "候補なし"} / ${feature.handsCount}手 / ${state.blockReason}`);
+}
+
+function renderTopCandidates(candidates) {
+  els.topCandidates.innerHTML = "";
+  const rows = candidates.length ? candidates : [{ label: "---", score: 0 }, { label: "---", score: 0 }, { label: "---", score: 0 }];
+  for (const candidate of rows.slice(0, 3)) {
+    const row = document.createElement("div");
+    row.className = "scoreRow";
+    const pct = Math.round((candidate.score || 0) * 100);
+    row.innerHTML = `
+      <div class="scoreName">${candidate.label === "---" ? "---" : signText(candidate.label)}</div>
+      <div class="miniBar"><div style="width:${pct}%"></div></div>
+      <div class="scorePct">${pct}%</div>
+    `;
+    els.topCandidates.appendChild(row);
+  }
+}
+
+// 中央表示は「確定した瞬間」だけ。認識中の途中経過は出さない。
+// 常時出していると候補が入れ替わるたびに文字と数字がチラつき、見ていて疲れる。
+// 確定したかどうかは大きく1回出れば分かるし、詰まったときの理由は
+// カメラ下のステータス行が受け持つ。
+function flashCenter(label) {
+  const s = signDef(label);
+  els.centerKana.textContent = s.jp;
+  els.centerRomaji.textContent = s.romaji;
+  els.centerSub.textContent = "";
+  els.centerReadout.classList.remove("show");
+  void els.centerReadout.offsetWidth;
+  els.centerReadout.classList.add("show");
+  clearTimeout(state.centerTimer);
+  state.centerTimer = setTimeout(() => els.centerReadout.classList.remove("show"), 620);
+}
+
+function triggerConfirm(label) {
+  flashCenter(label);
+  els.flash.classList.remove("fire");
+  void els.flash.offsetWidth;
+  els.flash.classList.add("fire");
+  playConfirmSound();
+}
+
+function triggerDirectJutsu(label) {
+  const s = signDef(label);
+  els.jutsuText.textContent = `${s.jp}・${s.jutsu}`;
+  els.jutsuText.classList.remove("active");
+  void els.jutsuText.offsetWidth;
+  els.jutsuText.classList.add("active");
+}
+
+function renderSequence() {
+  // 結んだ印の履歴（これが術のレシピと照合される本体）
+  els.sequenceSteps.innerHTML = "";
+  const hist = state.signHistory;
+  if (!hist.length) {
+    const div = document.createElement("div");
+    div.className = "step empty";
+    div.innerHTML = `<div class="jp">—</div><div class="id">印を結ぶ</div>`;
+    els.sequenceSteps.appendChild(div);
+  } else {
+    hist.forEach(h => {
+      const s = signDef(h.label);
+      const div = document.createElement("div");
+      div.className = "step done";
+      div.innerHTML = `<div class="jp">${s.jp}</div><div class="id">${s.romaji}</div>`;
+      els.sequenceSteps.appendChild(div);
+    });
+  }
+
+  // 本番モードはレシピを伏せる。組み立てはしないで抜ける
+  if (!state.showRecipes) {
+    els.sequenceStatus.textContent = hist.length
+      ? `${hist.length}印を保持中`
+      : "印を結んでください";
+    return;
+  }
+
+  // 全レシピを「あと何印か」で並べる。これが常に見えていると
+  // 「あと1つで雷切だ」という緊張が生まれる。
+  const ranked = JUTSU_RECIPES
+    .map(r => ({ r, p: recipeProgress(hist, r) }))
+    // 残り印数が同じなら、既に結び始めているものを上に出す
+    .sort((a, b) =>
+      a.p.remaining - b.p.remaining ||
+      b.p.matched - a.p.matched ||
+      a.r.signs.length - b.r.signs.length);
+
+  els.recipeList.innerHTML = "";
+  for (const { r, p } of ranked) {
+    const st = ELEMENT_STYLE[r.element] || ELEMENT_STYLE.neutral;
+    const row = document.createElement("div");
+    row.className = `recipeRow${p.matched > 0 ? " lit" : ""}`;
+    const chips = r.signs.map((id, i) =>
+      `<span class="sChip${i < p.matched ? " on" : ""}">${signDef(id).jp}</span>`
+    ).join("");
+    row.innerHTML = `
+      <div class="rHead">
+        <span class="rElem" style="background:${st.color}">${st.label}</span>
+        <span class="rName">${escapeHtml(r.name)}</span>
+        <span class="rRemain">${p.remaining === 0 ? "発動" : `あと${p.remaining}`}</span>
+      </div>
+      <div class="rSigns">${chips}</div>`;
+    els.recipeList.appendChild(row);
+  }
+
+  const closest = ranked[0];
+  els.sequenceStatus.textContent = closest && hist.length
+    ? `最短は「${closest.r.name}」まであと${closest.p.remaining}印`
+    : "印を結んでください（順番の縛りなし）";
+}
+
+function setMode(mode) {
+  state.mode = mode;
+  state.sequenceIndex = 0;
+  state.signHistory = [];
+  state.sequenceStartedAt = mode === "sequence" ? performance.now() : 0;
+  state.frameHistory = [];
+  state.stable = null;
+  resetHold();
+  const live = mode === "sequence" && !state.showRecipes;
+  document.body.classList.toggle("live", live);
+  els.directMode.classList.toggle("active", mode === "direct");
+  els.practiceMode.classList.toggle("active", mode === "sequence" && state.showRecipes);
+  els.liveMode.classList.toggle("active", live);
+  els.recipeHint.textContent = `${JUTSU_RECIPES.length}種`;
+  if (mode !== "sequence") els.firedLog.innerHTML = "";
+  els.modeBadge.textContent = mode === "direct" ? "印だけ" : (state.showRecipes ? "練習" : "本番");
+  setStatus(mode === "direct"
+    ? "印だけモード: 認識した印をその場で表示します。"
+    : (state.showRecipes
+        ? `練習モード: ${JUTSU_RECIPES.length}種のレシピを見ながら結べます。`
+        : "本番モード: レシピは伏せています。覚えた術を結んでください。"));
+  renderSequence();
+  updateSequenceTimer();
+}
+
+// 転換2の中心。期待している印と違ってもリセットしない。
+// 印を履歴に積んで、成立した術があれば撃つ。何も成立しなければ次の印を待つだけ。
+function advanceSequenceIfNeeded(label) {
+  const now = performance.now();
+  state.signHistory.push({ label, at: now });
+  // 一番長いレシピ分だけ持てば足りる
+  while (state.signHistory.length > RECIPE_MAX_LEN) state.signHistory.shift();
+
+  const hit = matchRecipe(state.signHistory);
+  if (hit) {
+    addLog(`JUTSU ${hit.name} [${hit.signs.join("→")}]`);
+    fireJutsu(hit);
+    if (!state.showRecipes) {
+      const st = ELEMENT_STYLE[hit.element] || ELEMENT_STYLE.neutral;
+      const row = document.createElement("div");
+      row.className = "fired";
+      row.style.setProperty("--fc", st.color);
+      row.textContent = `${hit.name}　${hit.signs.map(x => signDef(x).jp).join("→")}`;
+      els.firedLog.prepend(row);
+      while (els.firedLog.children.length > 8) els.firedLog.lastChild.remove();
+    }
+    state.signHistory = [];           // 撃ったら履歴を空にして二重発動を防ぐ
+    state.sequenceStartedAt = now;
+  } else {
+    addLog(`SIGN ${label} → 履歴 [${state.signHistory.map(h => h.label).join("→")}]`);
+  }
+  renderSequence();
+}
+
+// 最後の印から一定時間空いたら、履歴をまとめて捨てる。
+//
+// 以前は印1つずつを自分の古さで捨てていたが、残り時間バーは最後の印からの
+// 経過を出しているため表示と食い違っていた。2秒おきに結ぶと、バーが半分残って
+// いるのに先頭の印だけ静かに落ち、術が成立しなくなる。
+// 手間取るほど起きるので「やたらリセットされる」という体感になっていた。
+function expireSignHistory() {
+  if (!state.signHistory.length) return false;
+  const last = state.signHistory[state.signHistory.length - 1].at;
+  // バーが0%になる瞬間と失効の瞬間を揃える（updateSequenceTimer の remain と同じ境界）
+  if (performance.now() - last < state.sequenceMs) return false;
+  state.signHistory = [];
+  return true;
+}
+
+// 「あと何秒で履歴が消えるか」を出す。切れるのは最後に結んだ印からの経過時間。
+function updateSequenceTimer() {
+  if (state.mode !== "sequence") {
+    els.timerFill.parentElement.classList.remove("on");
+    els.timerFill.style.width = "100%";
+    return;
+  }
+  const hist = state.signHistory;
+  els.timerFill.parentElement.classList.toggle("on", hist.length > 0);
+  if (!hist.length) {
+    els.timerFill.style.width = "100%";
+    return;
+  }
+  const elapsed = performance.now() - hist[hist.length - 1].at;
+  const remain = Math.max(0, 1 - elapsed / state.sequenceMs);
+  els.timerFill.style.width = `${Math.round(remain * 100)}%`;
+  if (expireSignHistory()) {
+    playFailSound();
+    addLog("EXPIRE 印の履歴をリセットしました");
+    renderSequence();
+  }
+}
+
+function fireJutsu(recipe) {
+  playJutsuSound();
+  const st = ELEMENT_STYLE[recipe.element] || ELEMENT_STYLE.neutral;
+  els.jutsuEffect.style.setProperty("--elemColor", st.color);
+  els.jutsuEffect.style.setProperty("--elemGlow", st.glow);
+  els.jutsuText.style.color = st.glow;
+  els.jutsuText.textContent = `${recipe.name}！`;
+  els.jutsuEffect.innerHTML = '<div class="fireWave"></div><div class="fireRing"></div>';
+  // 印数が多い術ほど派手にする
+  const embers = 16 + recipe.signs.length * 5;
+  for (let i = 0; i < embers; i++) {
+    const ember = document.createElement("div");
+    ember.className = "ember";
+    ember.style.left = `${44 + Math.random() * 12}%`;
+    ember.style.top = `${46 + Math.random() * 18}%`;
+    ember.style.setProperty("--dx", `${(Math.random() - .5) * 720}px`);
+    ember.style.setProperty("--dy", `${-120 - Math.random() * 360}px`);
+    ember.style.animationDelay = `${Math.random() * .18}s`;
+    els.jutsuEffect.appendChild(ember);
+  }
+  els.jutsuEffect.classList.remove("active");
+  els.jutsuText.classList.remove("active");
+  void els.jutsuEffect.offsetWidth;
+  els.jutsuEffect.classList.add("active");
+  els.jutsuText.classList.add("active");
+  setTimeout(() => els.jutsuEffect.classList.remove("active"), 1500);
+}
+
+function addLog(message) {
+  const line = `${new Date().toLocaleTimeString()} ${message}`;
+  state.logs.unshift(line);
+  state.logs = state.logs.slice(0, 40);
+  els.recognitionLog.innerHTML = state.logs.map(x => `<div>${escapeHtml(x)}</div>`).join("");
+}
+
+function renderDebug() {
+  if (!state.debug) return;
+  const feature = state.latestFeature;
+  const debug = {
+    rawTopCandidates: state.latestScores.slice(0, 5),
+    stableCandidate: state.stable,
+    handsCount: feature ? feature.handsCount : 0,
+    handedness: feature ? feature.handedness : "---",
+    vectorLength: feature ? feature.vector.length : 0,
+    nearestNeighbors: state.latestNeighbors.slice(0, 7).map(n => ({
+      label: n.label,
+      distance: Number(n.distance.toFixed(5)),
+      handsCount: n.handsCount
+    })),
+    classifier: {
+      k: state.classifierK,
+      window: state.stabilityWindow,
+      settleMs: state.settleMs,
+      confirmScore: state.confirmScore,
+      maxKnnDist: state.maxKnnDist,
+      lastKnnDist: Number.isFinite(state.lastKnnDist) ? Number(state.lastKnnDist.toFixed(3)) : null
+    },
+    blockReason: state.blockReason,
+    roi: state.roi,
+    motion: {
+      speed: Number(state.motion.speed.toFixed(3)),
+      phase: state.motion.phase,
+      stillMs: Math.round(state.motion.stillMs),
+      moveMs: Math.round(state.motion.moveMs),
+      armed: state.motion.armed,
+      tolerance: state.motion.tolerance,
+      stopThreshold: Number(state.motion.stopThreshold.toFixed(3)),
+      stopSpeed: state.stopSpeed,
+      moveSpeed: state.moveSpeed
+    }
+  };
+  els.debugBox.textContent = JSON.stringify(debug, null, 2);
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+}
+
+function playConfirmSound() {
+  // SE差し替え用のフック。
+}
+
+function playFailSound() {
+  // SE差し替え用のフック。
+}
+
+function playJutsuSound() {
+  // SE差し替え用のフック。
+}
+
+function bindControls() {
+  els.startCamera.addEventListener("click", startCamera);
+  els.reloadSamples.addEventListener("click", loadSamplesFromUrl);
+  els.loadJsonButton.addEventListener("click", () => els.jsonFile.click());
+  els.jsonFile.addEventListener("change", event => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        ingestSamples(JSON.parse(reader.result));
+        setStatus(`手動JSON読込完了: ${state.samples.length} samples`);
+      } catch (error) {
+        setStatus(`手動JSON読込に失敗しました: ${error.message}`, true);
+      }
+    };
+    reader.readAsText(file);
+  });
+  els.toggleDebug.addEventListener("click", () => {
+    state.debug = !state.debug;
+    els.toggleDebug.textContent = state.debug ? "Debug ON" : "Debug OFF";
+    els.debugBox.classList.toggle("show", state.debug);
+    renderDebug();
+  });
+  els.directMode.addEventListener("click", () => setMode("direct"));
+  els.practiceMode.addEventListener("click", () => { state.showRecipes = true; setMode("sequence"); });
+  els.liveMode.addEventListener("click", () => { state.showRecipes = false; setMode("sequence"); });
+  els.kSelect.addEventListener("change", () => {
+    state.classifierK = Number(els.kSelect.value);
+  });
+  els.windowInput.addEventListener("change", () => {
+    state.stabilityWindow = Math.max(2, Number(els.windowInput.value) || DEFAULTS.stabilityWindow);
+    trimHistory();
+  });
+  els.confirmInput.addEventListener("change", () => {
+    const ms = Math.max(40, Math.min(600, Number(els.confirmInput.value) || DEFAULTS.settleMs));
+    state.settleMs = ms;
+    els.confirmInput.value = String(Math.round(ms));
+    resetHold();
+    renderSequence();
+  });
+  els.scoreInput.addEventListener("change", () => {
+    state.confirmScore = Math.max(.3, Math.min(.95, Number(els.scoreInput.value) || DEFAULTS.confirmScore));
+  });
+  els.stopSpeedInput.addEventListener("change", () => {
+    state.stopSpeed = Math.max(.2, Math.min(3, Number(els.stopSpeedInput.value) || DEFAULTS.stopSpeed));
+    els.stopSpeedInput.value = state.stopSpeed.toFixed(1);
+    resetHold();
+  });
+  els.moveSpeedInput.addEventListener("change", () => {
+    state.moveSpeed = Math.max(.5, Math.min(6, Number(els.moveSpeedInput.value) || DEFAULTS.moveSpeed));
+    els.moveSpeedInput.value = state.moveSpeed.toFixed(1);
+    resetHold();
+  });
+  els.maxDistInput.addEventListener("change", () => {
+    state.maxKnnDist = Math.max(1, Math.min(10, Number(els.maxDistInput.value) || DEFAULTS.maxKnnDist));
+    els.maxDistInput.value = state.maxKnnDist.toFixed(1);
+  });
+  els.maxDist1Input.addEventListener("change", () => {
+    state.maxKnnDist1Hand = Math.max(.5, Math.min(10, Number(els.maxDist1Input.value) || DEFAULTS.maxKnnDist1Hand));
+    els.maxDist1Input.value = state.maxKnnDist1Hand.toFixed(1);
+  });
+  els.sequenceTime.addEventListener("change", () => {
+    state.sequenceMs = Number(els.sequenceTime.value) || DEFAULTS.sequenceMs;
+    state.sequenceStartedAt = performance.now();
+    renderSequence();
+  });
+  els.toggleRoi.addEventListener("click", () => {
+    state.roi.enabled = !state.roi.enabled;
+    resetHold();
+    renderRoi(state.roi.lastInside);
+  });
+  els.resetRoi.addEventListener("click", () => {
+    state.roi.cx = 0.5;
+    state.roi.cy = 0.5;
+    state.roi.size = 0.52;
+    resetHold();
+    renderRoi(state.roi.lastInside);
+  });
+  els.roiXInput.addEventListener("input", () => {
+    state.roi.cx = Number(els.roiXInput.value) / 100;
+    resetHold();
+    renderRoi(state.roi.lastInside);
+  });
+  els.roiYInput.addEventListener("input", () => {
+    state.roi.cy = Number(els.roiYInput.value) / 100;
+    resetHold();
+    renderRoi(state.roi.lastInside);
+  });
+  els.roiSizeInput.addEventListener("input", () => {
+    state.roi.size = Number(els.roiSizeInput.value) / 100;
+    resetHold();
+    renderRoi(state.roi.lastInside);
+  });
+  bindRoiDrag();
+}
+
+function bindRoiDrag() {
+  els.roiBox.addEventListener("pointerdown", event => {
+    const mode = event.target === els.roiHandle ? "resize" : "move";
+    const box = els.video.getBoundingClientRect();
+    state.roiDrag = {
+      mode,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startCx: state.roi.cx,
+      startCy: state.roi.cy,
+      startSize: state.roi.size,
+      boxW: box.width,
+      boxH: box.height
+    };
+    els.roiBox.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+
+  els.roiBox.addEventListener("pointermove", event => {
+    const drag = state.roiDrag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (drag.mode === "move") {
+      state.roi.cx = clamp(drag.startCx + dx / Math.max(1, drag.boxW), 0.08, 0.92);
+      state.roi.cy = clamp(drag.startCy + dy / Math.max(1, drag.boxH), 0.08, 0.92);
+    } else {
+      const delta = Math.max(dx, dy) / Math.max(1, Math.min(drag.boxW, drag.boxH));
+      state.roi.size = clamp(drag.startSize + delta, 0.25, 0.85);
+    }
+    resetHold();
+    renderRoi(state.roi.lastInside);
+    event.preventDefault();
+  });
+
+  const endDrag = event => {
+    if (state.roiDrag && state.roiDrag.pointerId === event.pointerId) {
+      state.roiDrag = null;
+    }
+  };
+  els.roiBox.addEventListener("pointerup", endDrag);
+  els.roiBox.addEventListener("pointercancel", endDrag);
+}
+
+function init() {
+  bindControls();
+  setMode("sequence");   // 起動時は練習モード
+  renderSequence();
+  renderSampleCounts();
+  renderTopCandidates([]);
+  renderRoi(null);
+  loadSamplesFromUrl();
+  setInterval(updateSequenceTimer, 100);
+  window.addEventListener("resize", () => renderRoi(state.roi.lastInside));
+}
+
+init();
+</script>
+</body>
+</html>

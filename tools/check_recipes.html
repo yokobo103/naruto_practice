@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>術レシピ検証 — NARUTO印センサー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    color-scheme: dark;
+    --brush: "Yuji Syuku", "HGP行書体", "HG行書体", "Klee One", serif;
+    --ok: #6ee7a0;
+    --ng: #ff6b6b;
+    --warn: #ffd166;
+  }
+  body {
+    margin: 0; padding: 26px 30px 70px;
+    background: #0b0e14; color: #e8edf6;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.6;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .lead { font-size: 13px; opacity: .6; margin: 0 0 24px; }
+  h2 { font-size: 14px; margin: 26px 0 10px; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,.1); }
+  .verdict {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 15px; font-weight: 600;
+    padding: 10px 16px; border-radius: 8px; margin-bottom: 6px;
+  }
+  .verdict.ok { background: rgba(110,231,160,.12); color: var(--ok); }
+  .verdict.ng { background: rgba(255,107,107,.12); color: var(--ng); }
+  .issue {
+    border-left: 3px solid var(--ng);
+    background: rgba(255,107,107,.07);
+    padding: 9px 13px; border-radius: 0 6px 6px 0; margin-bottom: 8px; font-size: 13px;
+  }
+  .issue.warn { border-color: var(--warn); background: rgba(255,209,102,.07); }
+  .issue b { font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid rgba(255,255,255,.06); }
+  th { font-size: 11px; opacity: .55; font-weight: 600; }
+  .jp { font-family: var(--brush); font-size: 17px; }
+  .name { font-family: var(--brush); font-size: 16px; }
+  .elem { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; color: #10131c; font-size: 11px; font-weight: 700; }
+  .bar { display: inline-block; height: 9px; border-radius: 999px; background: #7aa2ff; vertical-align: middle; }
+  .muted { opacity: .5; }
+  code { background: rgba(255,255,255,.07); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>術レシピ検証</h1>
+<p class="lead">
+  <code>data/recipes.js</code> を読んで、同時待ち受けが破綻しないかを全ペアで確認します。<br>
+  レシピを足したり直したりしたら、このページを開き直してください。
+</p>
+<div id="out">読み込み中...</div>
+
+<script src="../data/recipes.js"></script>
+<script>
+// 12印。ここに無い印がレシピに出てきたらデータ側の誤りとして検出する。
+const SIGN_JP = {
+  ne: "子", ushi: "丑", tora: "寅", u: "卯", tatsu: "辰", mi: "巳",
+  uma: "午", hitsuji: "未", saru: "申", tori: "酉", inu: "戌", i: "亥"
+};
+
+// 実測で誤認しやすかった組（leave-one-out k-NNの混同行列より）。
+// レシピ内で隣り合っていると、速く結んだときに取り違えが起きやすい。
+const CONFUSABLE = [["tora", "hitsuji"], ["mi", "ne"]];
+
+const esc = t => String(t).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const jp = id => SIGN_JP[id] || `?${id}?`;
+const chain = signs => signs.map(jp).join("→");
+
+function check() {
+  const R = window.JUTSU_RECIPES || [];
+  const issues = [];   // 直さないと壊れるもの
+  const warns = [];    // 気に留めておくもの
+
+  // 1) 未知の印が混ざっていないか
+  for (const r of R) {
+    for (const s of r.signs) {
+      if (!SIGN_JP[s]) issues.push(`<b>${esc(r.name)}</b> に未知の印 <code>${esc(s)}</code> が入っています`);
+    }
+    if (!r.signs.length) issues.push(`<b>${esc(r.name)}</b> の印が空です`);
+    if (!r.id || !r.name) issues.push(`id か name が欠けているレシピがあります`);
+  }
+
+  // 2) idの重複
+  const ids = {};
+  for (const r of R) {
+    if (ids[r.id]) issues.push(`id <code>${esc(r.id)}</code> が重複しています（${esc(ids[r.id])} と ${esc(r.name)}）`);
+    ids[r.id] = r.name;
+  }
+
+  // 3) 完全重複 — 同じ並びは区別できない
+  const bySeq = {};
+  for (const r of R) {
+    const k = r.signs.join(",");
+    (bySeq[k] ||= []).push(r.name);
+  }
+  for (const k of Object.keys(bySeq)) {
+    if (bySeq[k].length > 1) {
+      issues.push(`<b>完全重複</b>: ${bySeq[k].map(esc).join(" と ")} が同じ並び <span class="jp">${chain(k.split(","))}</span>。区別できないのでどちらか外してください`);
+    }
+  }
+
+  // 4) 途中暴発 — 長い術を結ぶ途中で短い術が先に成立する
+  //    照合は「履歴の末尾一致」なので、長い方のk印目までの末尾が短い方と一致すると撃たれる
+  for (const a of R) {
+    for (const b of R) {
+      if (a === b || b.signs.length >= a.signs.length) continue;
+      for (let k = b.signs.length; k < a.signs.length; k++) {
+        const tail = a.signs.slice(k - b.signs.length, k);
+        if (tail.every((s, i) => s === b.signs[i])) {
+          issues.push(`<b>途中暴発</b>: <span class="name">${esc(a.name)}</span>（${a.signs.length}印）を結ぶ途中、${k}印目で <span class="name">${esc(b.name)}</span> が先に発動します`);
+          break;
+        }
+      }
+    }
+  }
+
+  // 5) 2印のレシピ — 構造的に暴発しやすい
+  for (const r of R) {
+    if (r.signs.length <= 2) {
+      warns.push(`<b>${esc(r.name)}</b> は${r.signs.length}印しかありません。短いレシピは他の術の途中で暴発しやすいので、いまは無事でも追加のたびに確認が要ります`);
+    }
+  }
+
+  // 6) 誤認しやすい印が隣り合っていないか
+  for (const r of R) {
+    for (let i = 0; i + 1 < r.signs.length; i++) {
+      for (const [x, y] of CONFUSABLE) {
+        const p = r.signs[i], q = r.signs[i + 1];
+        if ((p === x && q === y) || (p === y && q === x)) {
+          warns.push(`<b>${esc(r.name)}</b> で <span class="jp">${jp(p)}</span>→<span class="jp">${jp(q)}</span> が隣り合っています。この2つは実測で取り違えが多いので、速く結ぶと失敗しやすいかもしれません`);
+        }
+      }
+    }
+  }
+
+  // 7) 印の使用頻度（撮り直しの優先度になる）
+  const use = {};
+  Object.keys(SIGN_JP).forEach(s => use[s] = 0);
+  R.forEach(r => r.signs.forEach(s => { if (s in use) use[s]++; }));
+  const unused = Object.keys(use).filter(s => use[s] === 0);
+  if (unused.length) {
+    warns.push(`どの術にも使われていない印: ${unused.map(s => `<span class="jp">${jp(s)}</span>`).join(" ")}。練習しても出番がありません`);
+  }
+
+  const maxLen = Math.max(...R.map(r => r.signs.length));
+  const ok = issues.length === 0;
+
+  let html = `
+    <div class="verdict ${ok ? "ok" : "ng"}">
+      ${ok ? "✓ 衝突なし。このまま使えます" : `✕ ${issues.length}件の問題があります`}
+    </div>
+    <div class="muted" style="font-size:12px">
+      レシピ ${R.length}本 / 最長 ${maxLen}印 / 全 ${R.length * (R.length - 1)} ペアを検査
+    </div>`;
+
+  if (issues.length) {
+    html += `<h2>直す必要があるもの</h2>` + issues.map(t => `<div class="issue">${t}</div>`).join("");
+  }
+  if (warns.length) {
+    html += `<h2>気に留めておくもの</h2>` + warns.map(t => `<div class="issue warn">${t}</div>`).join("");
+  }
+
+  // レシピ一覧
+  html += `<h2>レシピ一覧</h2><table><tr><th></th><th>術</th><th>印</th><th>数</th></tr>`;
+  for (const r of [...R].sort((a, b) => a.signs.length - b.signs.length)) {
+    const st = (window.ELEMENT_STYLE || {})[r.element] || { label: "印", color: "#a9b4ff" };
+    html += `<tr>
+      <td><span class="elem" style="background:${esc(st.color)}">${esc(st.label)}</span></td>
+      <td class="name">${esc(r.name)}</td>
+      <td class="jp">${chain(r.signs)}</td>
+      <td class="muted">${r.signs.length}</td>
+    </tr>`;
+  }
+  html += `</table>`;
+
+  // 印の使用頻度
+  html += `<h2>印の使用頻度</h2><table><tr><th>印</th><th>使われている術の数</th></tr>`;
+  for (const s of Object.keys(use).sort((a, b) => use[b] - use[a])) {
+    html += `<tr>
+      <td class="jp">${jp(s)} <span class="muted" style="font-size:11px">${s}</span></td>
+      <td><span class="bar" style="width:${use[s] * 12}px"></span> ${use[s]}</td>
+    </tr>`;
+  }
+  html += `</table>`;
+
+  document.getElementById("out").innerHTML = html;
+}
+
+if (!window.JUTSU_RECIPES) {
+  document.getElementById("out").innerHTML =
+    `<div class="verdict ng">✕ data/recipes.js を読み込めませんでした</div>
+     <p class="muted">HTTPサーバ経由で開いてください（ファイルを直接開くと読めません）。<br>
+     <code>python -m http.server 8134</code> して <code>http://localhost:8134/tools/check_recipes.html</code></p>`;
+} else {
+  check();
+}
+</script>
+</body>
+</html>

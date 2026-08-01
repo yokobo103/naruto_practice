@@ -1,0 +1,1138 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>12印 MediaPipe ランドマーク収集・分類テスター</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f1115;
+      --panel: #1b1f27;
+      --panel2: #252b36;
+      --text: #f5f7fb;
+      --muted: #aab2c0;
+      --line: #394150;
+      --accent: #39d59f;
+      --warm: #f2b84b;
+      --gold: #ffd166;
+      --danger: #f06a6a;
+      --blue: #63a8ff;
+      --shadow: 0 18px 60px rgba(0,0,0,.36);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    body { padding-bottom: env(safe-area-inset-bottom); }
+    .app {
+      min-height: 100svh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: rgba(15,17,21,.96);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(14px);
+    }
+    .top {
+      max-width: 1200px;
+      margin: 0 auto;
+      width: calc(100vw - 28px);
+      padding: 10px 0;
+      display: grid;
+      gap: 8px;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(18px, 4vw, 28px);
+      line-height: 1.1;
+    }
+    .sub {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .metric {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px 10px;
+      min-width: 0;
+    }
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.2;
+    }
+    .metric strong {
+      display: block;
+      font-size: 20px;
+      line-height: 1.05;
+    }
+    main {
+      max-width: 1200px;
+      width: calc(100vw - 28px);
+      margin: 0 auto;
+      padding: 10px 0;
+      display: grid;
+      gap: 10px;
+    }
+    .workspace {
+      display: grid;
+      gap: 10px;
+    }
+    .cameraBox {
+      position: relative;
+      overflow: hidden;
+      background: #050609;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      aspect-ratio: 4 / 3;
+      min-height: 300px;
+    }
+    video, canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    video {
+      transform: scaleX(-1);
+    }
+    canvas {
+      z-index: 1;
+      pointer-events: none;
+    }
+    .roiBox {
+      position: absolute;
+      z-index: 5;
+      border: 2px solid rgba(255, 209, 102, .95);
+      background:
+        linear-gradient(90deg, rgba(255,209,102,.24) 1px, transparent 1px),
+        linear-gradient(rgba(255,209,102,.24) 1px, transparent 1px),
+        rgba(255, 209, 102, .05);
+      background-size: 33.333% 33.333%;
+      box-shadow: 0 0 0 999px rgba(0,0,0,.18), 0 0 24px rgba(255,159,46,.3);
+      cursor: move;
+      pointer-events: auto;
+      touch-action: none;
+    }
+    .roiBox.outside {
+      border-color: rgba(255,107,107,.95);
+      background:
+        linear-gradient(90deg, rgba(255,107,107,.24) 1px, transparent 1px),
+        linear-gradient(rgba(255,107,107,.24) 1px, transparent 1px),
+        rgba(255, 107, 107, .05);
+      box-shadow: 0 0 0 999px rgba(0,0,0,.2), 0 0 24px rgba(255,107,107,.28);
+    }
+    .roiHint {
+      position: absolute;
+      left: 8px;
+      top: 7px;
+      padding: 4px 7px;
+      border-radius: 6px;
+      background: rgba(0,0,0,.62);
+      color: var(--gold);
+      font-size: 11px;
+      font-weight: 900;
+      line-height: 1;
+      pointer-events: none;
+    }
+    .roiBox.outside .roiHint {
+      color: #ff8f8f;
+    }
+    .roiHandle {
+      position: absolute;
+      right: -7px;
+      bottom: -7px;
+      width: 18px;
+      height: 18px;
+      border: 2px solid #130a00;
+      border-radius: 50%;
+      background: var(--gold);
+      box-shadow: 0 0 16px rgba(255,209,102,.75);
+      cursor: nwse-resize;
+      pointer-events: auto;
+    }
+    .overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      display: grid;
+      align-items: end;
+      padding: 12px;
+    }
+    .status {
+      background: rgba(0,0,0,.62);
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-weight: 750;
+      line-height: 1.35;
+    }
+    .countdown {
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      display: none;
+      place-items: center;
+      pointer-events: none;
+      background: rgba(0,0,0,.15);
+      font-size: clamp(72px, 22vw, 160px);
+      font-weight: 950;
+      text-shadow: 0 4px 28px #000;
+    }
+    .side {
+      display: grid;
+      gap: 10px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      min-width: 0;
+    }
+    .panel h2 {
+      margin: 0 0 8px;
+      font-size: 16px;
+    }
+    .live {
+      display: grid;
+      gap: 6px;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .bar {
+      height: 14px;
+      border-radius: 999px;
+      background: #0e1117;
+      overflow: hidden;
+      border: 1px solid var(--line);
+    }
+    .bar > div {
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      transition: width .12s linear;
+    }
+    .prediction {
+      font-size: 28px;
+      font-weight: 900;
+      line-height: 1.1;
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+    .controls {
+      border-top: 1px solid var(--line);
+      background: rgba(15,17,21,.98);
+    }
+    .controlsInner {
+      max-width: 1200px;
+      width: calc(100vw - 28px);
+      margin: 0 auto;
+      padding: 10px 0 calc(12px + env(safe-area-inset-bottom));
+      display: grid;
+      gap: 10px;
+    }
+    .labels {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .labelBtn {
+      min-height: 50px;
+    }
+    .labelBtn.active {
+      background: var(--accent);
+      color: #06120e;
+      border-color: var(--accent);
+    }
+    .actions, .burstActions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .burstActions {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    button, select, input {
+      font: inherit;
+    }
+    button {
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px 10px;
+      background: var(--panel2);
+      color: var(--text);
+      font-weight: 800;
+      touch-action: manipulation;
+    }
+    button:disabled {
+      opacity: .5;
+    }
+    .primary { background: var(--accent); color: #07120f; border-color: var(--accent); }
+    .warm { background: var(--warm); color: #201404; border-color: var(--warm); }
+    .blue { background: var(--blue); color: #06101f; border-color: var(--blue); }
+    .danger { background: #3a2124; color: #ffdede; border-color: #7e3a40; }
+    .tiny {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .counts {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      max-height: 240px;
+      overflow: auto;
+    }
+    .count {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 6px;
+      background: #151922;
+      text-align: center;
+    }
+    .count span {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .count strong {
+      display: block;
+      font-size: 18px;
+      line-height: 1.05;
+    }
+    @media (min-width: 900px) {
+      .summary { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+      .workspace { grid-template-columns: 1.55fr .9fr; align-items: start; }
+      .cameraBox { min-height: 520px; }
+      .labels { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+      .actions { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+      .burstActions { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+      .counts { grid-template-columns: repeat(4, minmax(0, 1fr)); max-height: none; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="top">
+      <h1>12印 MediaPipe ランドマーク収集・分類テスター</h1>
+      <div class="sub">
+        1手検出でも保存します。両手が融合する印も特徴として扱うための検証用です。
+        まず各印10〜20サンプルを集めて、分類の兆しと混ざる印を見ます。
+      </div>
+      <div class="summary">
+        <div class="metric"><span>現在ラベル</span><strong id="currentLabelText">子</strong></div>
+        <div class="metric"><span>保存サンプル</span><strong id="sampleCount">0</strong></div>
+        <div class="metric"><span>検出手数</span><strong id="handsCount">0</strong></div>
+        <div class="metric"><span>ライブ判定</span><strong id="liveLabel">---</strong></div>
+        <div class="metric"><span>信頼感</span><strong id="liveScore">0%</strong></div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="workspace">
+      <section class="cameraBox">
+        <video id="video" autoplay muted playsinline webkit-playsinline></video>
+        <canvas id="canvas"></canvas>
+        <div id="roiBox" class="roiBox" title="印を結ぶ領域。ドラッグで移動、右下の丸でサイズ変更。">
+          <div class="roiHint">印領域</div>
+          <div id="roiHandle" class="roiHandle" title="領域サイズ変更"></div>
+        </div>
+        <div class="countdown" id="countdown"></div>
+        <div class="overlay">
+          <div class="status" id="status">カメラ開始を押してください</div>
+        </div>
+      </section>
+
+      <aside class="side">
+        <section class="panel">
+          <h2>ライブ分類</h2>
+          <div class="live">
+            <div class="prediction" id="prediction">---</div>
+            <div class="bar"><div id="scoreBar"></div></div>
+            <div id="topScores" class="mono">samples: 0</div>
+            <div id="featurePreview" class="mono">features: ---</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>保存数</h2>
+          <div class="counts" id="counts"></div>
+        </section>
+
+        <section class="panel">
+          <h2>メモ</h2>
+          <div class="tiny">
+            ・寅のようにMediaPipeが1手扱いする印も、そのまま保存してください。<br>
+            ・分類は簡易kNNです。本番モデルではなく「分離できそうか」を見る道具です。<br>
+            ・CSVにはラベル、検出手数、handedness、特徴量を保存します。
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <footer class="controls">
+    <div class="controlsInner">
+      <div class="labels" id="labelButtons"></div>
+
+      <div class="burstActions">
+        <button class="primary" id="startCamera">カメラ開始</button>
+        <button class="warm" id="burst10" disabled>3秒後 10連続</button>
+        <button class="warm" id="burst20" disabled>3秒後 20連続</button>
+        <button class="blue" id="singleSave" disabled>今の1枚保存</button>
+        <button id="downloadCsv" disabled>CSVダウンロード</button>
+        <button class="danger" id="clearSamples" disabled>全サンプル削除</button>
+      </div>
+
+      <div class="actions">
+        <button id="transition10" disabled>transition 10連続</button>
+        <button id="transition20" disabled>transition 20連続</button>
+        <button id="downloadJson" disabled>JSONダウンロード</button>
+        <button id="loadJson">JSON読込</button>
+        <input type="file" id="jsonFile" accept="application/json" style="display:none" />
+        <button id="copySummary" disabled>集計コピー</button>
+        <button id="toggleMirror">鏡像表示ON</button>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<script>
+const SIGNS = [
+  { id: "ne", jp: "子", romaji: "ne" },
+  { id: "ushi", jp: "丑", romaji: "ushi" },
+  { id: "tora", jp: "寅", romaji: "tora" },
+  { id: "u", jp: "卯", romaji: "u" },
+  { id: "tatsu", jp: "辰", romaji: "tatsu" },
+  { id: "mi", jp: "巳", romaji: "mi" },
+  { id: "uma", jp: "午", romaji: "uma" },
+  { id: "hitsuji", jp: "未", romaji: "hitsuji" },
+  { id: "saru", jp: "申", romaji: "saru" },
+  { id: "tori", jp: "酉", romaji: "tori" },
+  { id: "inu", jp: "戌", romaji: "inu" },
+  { id: "i", jp: "亥", romaji: "i" },
+  { id: "transition", jp: "遷移", romaji: "transition" }
+];
+
+const state = {
+  currentLabel: "ne",
+  stream: null,
+  camera: null,
+  hands: null,
+  latestResults: null,
+  latestFeature: null,
+  samples: [],
+  busy: false,
+  mirror: true,
+  classifierK: 5,
+  roi: {
+    cx: 0.5,
+    cy: 0.5,
+    size: 0.52,
+    lastInside: null
+  },
+  roiDrag: null
+};
+
+const els = {
+  video: document.getElementById("video"),
+  canvas: document.getElementById("canvas"),
+  roiBox: document.getElementById("roiBox"),
+  roiHandle: document.getElementById("roiHandle"),
+  status: document.getElementById("status"),
+  countdown: document.getElementById("countdown"),
+  currentLabelText: document.getElementById("currentLabelText"),
+  sampleCount: document.getElementById("sampleCount"),
+  handsCount: document.getElementById("handsCount"),
+  liveLabel: document.getElementById("liveLabel"),
+  liveScore: document.getElementById("liveScore"),
+  prediction: document.getElementById("prediction"),
+  scoreBar: document.getElementById("scoreBar"),
+  topScores: document.getElementById("topScores"),
+  featurePreview: document.getElementById("featurePreview"),
+  counts: document.getElementById("counts"),
+  labelButtons: document.getElementById("labelButtons"),
+  startCamera: document.getElementById("startCamera"),
+  burst10: document.getElementById("burst10"),
+  burst20: document.getElementById("burst20"),
+  singleSave: document.getElementById("singleSave"),
+  downloadCsv: document.getElementById("downloadCsv"),
+  clearSamples: document.getElementById("clearSamples"),
+  transition10: document.getElementById("transition10"),
+  transition20: document.getElementById("transition20"),
+  downloadJson: document.getElementById("downloadJson"),
+  loadJson: document.getElementById("loadJson"),
+  jsonFile: document.getElementById("jsonFile"),
+  copySummary: document.getElementById("copySummary"),
+  toggleMirror: document.getElementById("toggleMirror")
+};
+
+function signText(id) {
+  const s = SIGNS.find(x => x.id === id);
+  return s ? `${s.romaji} / ${s.jp}` : id;
+}
+
+function setStatus(msg) {
+  els.status.textContent = msg;
+}
+
+function setBusy(busy) {
+  state.busy = busy;
+  const hasCamera = Boolean(state.camera);
+  els.startCamera.disabled = busy;
+  els.burst10.disabled = busy || !hasCamera;
+  els.burst20.disabled = busy || !hasCamera;
+  els.singleSave.disabled = busy || !hasCamera;
+  els.transition10.disabled = busy || !hasCamera;
+  els.transition20.disabled = busy || !hasCamera;
+  els.downloadCsv.disabled = busy || state.samples.length === 0;
+  els.downloadJson.disabled = busy || state.samples.length === 0;
+  els.clearSamples.disabled = busy || state.samples.length === 0;
+  els.copySummary.disabled = busy || state.samples.length === 0;
+  [...els.labelButtons.querySelectorAll("button")].forEach(b => b.disabled = busy);
+}
+
+function renderLabels() {
+  els.labelButtons.innerHTML = "";
+  SIGNS.filter(s => s.id !== "transition").forEach(sign => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "labelBtn";
+    btn.dataset.label = sign.id;
+    btn.textContent = `${sign.romaji} / ${sign.jp}`;
+    btn.addEventListener("click", () => {
+      state.currentLabel = sign.id;
+      setStatus(`${signText(sign.id)} を記録します`);
+      refresh();
+    });
+    els.labelButtons.appendChild(btn);
+  });
+}
+
+function renderCounts() {
+  els.counts.innerHTML = "";
+  SIGNS.forEach(sign => {
+    const total = state.samples.filter(s => s.label === sign.id).length;
+    const one = state.samples.filter(s => s.label === sign.id && s.handsCount === 1).length;
+    const two = state.samples.filter(s => s.label === sign.id && s.handsCount === 2).length;
+    const div = document.createElement("div");
+    div.className = "count";
+    div.innerHTML = `<span>${sign.romaji}/${sign.jp}</span><strong>${total}</strong><span>1手:${one} / 2手:${two}</span>`;
+    els.counts.appendChild(div);
+  });
+}
+
+function refresh() {
+  els.currentLabelText.textContent = signText(state.currentLabel);
+  els.sampleCount.textContent = String(state.samples.length);
+  renderCounts();
+  [...els.labelButtons.querySelectorAll("button")].forEach(b => {
+    b.classList.toggle("active", b.dataset.label === state.currentLabel);
+  });
+  setBusy(state.busy);
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function countdown(seconds) {
+  els.countdown.style.display = "grid";
+  for (let i = seconds; i > 0; i--) {
+    els.countdown.textContent = String(i);
+    setStatus(`${i}秒後に記録開始。印を結んで維持してください`);
+    await wait(1000);
+  }
+  els.countdown.textContent = "";
+  els.countdown.style.display = "none";
+}
+
+function timestamp() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
+async function startCamera() {
+  setBusy(true);
+  setStatus("MediaPipe Handsを読み込んでいます...");
+  try {
+    state.hands = new Hands({
+      locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+
+    state.hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.45,
+      minTrackingConfidence: 0.45
+    });
+
+    state.hands.onResults(onResults);
+
+    state.camera = new Camera(els.video, {
+      onFrame: async () => {
+        await state.hands.send({ image: els.video });
+      },
+      width: 1280,
+      height: 960
+    });
+    await state.camera.start();
+    setStatus("準備完了。ラベルを選んで3秒後連続記録を押してください");
+  } catch (e) {
+    console.error(e);
+    setStatus(`起動失敗: ${e.message}`);
+    state.camera = null;
+  } finally {
+    setBusy(false);
+  }
+}
+
+function onResults(results) {
+  state.latestResults = results;
+  drawResults(results);
+  state.latestFeature = extractFeature(results);
+  if (!state.latestFeature) {
+    renderRoi(null);
+    updateLive(null);
+    return;
+  }
+
+  const roiCheck = featureInRoi(state.latestFeature);
+  renderRoi(roiCheck.inside);
+  if (!roiCheck.inside) {
+    updateOutsideRoi(state.latestFeature);
+    return;
+  }
+  updateLive(state.latestFeature);
+}
+
+function drawResults(results) {
+  const canvas = els.canvas;
+  const videoRect = els.video.getBoundingClientRect();
+  canvas.width = Math.max(1, Math.round(videoRect.width * devicePixelRatio));
+  canvas.height = Math.max(1, Math.round(videoRect.height * devicePixelRatio));
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  ctx.clearRect(0, 0, videoRect.width, videoRect.height);
+
+  const landmarks = results.multiHandLandmarks || [];
+  if (!landmarks.length) return;
+
+  ctx.save();
+  if (state.mirror) {
+    ctx.translate(videoRect.width, 0);
+    ctx.scale(-1, 1);
+  }
+
+  for (let i = 0; i < landmarks.length; i++) {
+    drawConnectors(ctx, landmarks[i], HAND_CONNECTIONS, { color: "#39d59f", lineWidth: 3 });
+    drawLandmarks(ctx, landmarks[i], { color: "#f2b84b", lineWidth: 1, radius: 3 });
+  }
+  ctx.restore();
+}
+
+function handednessName(results, index) {
+  const h = results.multiHandedness && results.multiHandedness[index];
+  if (!h || !h.label) return "unknown";
+  return h.label;
+}
+
+function normalizeHand(landmarks) {
+  // wristを原点にし、手首〜中指MCP距離を基準に正規化する
+  const wrist = landmarks[0];
+  const midMcp = landmarks[9];
+  const scale = Math.hypot(midMcp.x - wrist.x, midMcp.y - wrist.y, (midMcp.z || 0) - (wrist.z || 0)) || 1e-6;
+  return landmarks.map(p => ({
+    x: (p.x - wrist.x) / scale,
+    y: (p.y - wrist.y) / scale,
+    z: ((p.z || 0) - (wrist.z || 0)) / scale
+  }));
+}
+
+function fingerFeatures(hand) {
+  // normalized hand
+  const tips = [4, 8, 12, 16, 20];
+  const mcps = [2, 5, 9, 13, 17];
+  const pips = [3, 6, 10, 14, 18];
+
+  const out = [];
+  for (let i = 0; i < tips.length; i++) {
+    const tip = hand[tips[i]], mcp = hand[mcps[i]], pip = hand[pips[i]];
+    const tipMcp = Math.hypot(tip.x - mcp.x, tip.y - mcp.y, tip.z - mcp.z);
+    const tipPip = Math.hypot(tip.x - pip.x, tip.y - pip.y, tip.z - pip.z);
+    const vertical = mcp.y - tip.y; // 上に伸びるほど正
+    out.push(tipMcp, tipPip, vertical);
+  }
+
+  // 指先間距離
+  for (let a = 0; a < tips.length; a++) {
+    for (let b = a + 1; b < tips.length; b++) {
+      const p = hand[tips[a]], q = hand[tips[b]];
+      out.push(Math.hypot(p.x-q.x, p.y-q.y, p.z-q.z));
+    }
+  }
+
+  // bbox
+  const xs = hand.map(p => p.x), ys = hand.map(p => p.y);
+  const w = Math.max(...xs) - Math.min(...xs);
+  const h = Math.max(...ys) - Math.min(...ys);
+  out.push(w, h, h / Math.max(w, 1e-6));
+
+  return out;
+}
+
+function extractFeature(results) {
+  const hands = results.multiHandLandmarks || [];
+  const handsCount = hands.length;
+  els.handsCount.textContent = String(handsCount);
+
+  if (handsCount === 0) {
+    return null;
+  }
+
+  const items = hands.slice(0, 2).map((lm, idx) => ({
+    handedness: handednessName(results, idx),
+    raw: lm,
+    norm: normalizeHand(lm)
+  }));
+
+  // 安定化のため、手首x座標でソート
+  items.sort((a, b) => a.raw[0].x - b.raw[0].x);
+
+  const vector = [];
+  vector.push(handsCount);
+
+  // 1手/2手共通で固定長にする。2手ぶん入れ、不足手は0埋め
+  for (let i = 0; i < 2; i++) {
+    if (items[i]) {
+      vector.push(1);
+      vector.push(...fingerFeatures(items[i].norm));
+      // 主要ランドマークも粗く入れる
+      [0,4,8,12,16,20].forEach(idx => {
+        vector.push(items[i].norm[idx].x, items[i].norm[idx].y, items[i].norm[idx].z);
+      });
+    } else {
+      vector.push(0);
+      const dummyLen = fingerFeatures(Array.from({length:21}, () => ({x:0,y:0,z:0}))).length + 6*3;
+      for (let k=0; k<dummyLen; k++) vector.push(0);
+    }
+  }
+
+  // 2手間特徴量
+  if (items.length >= 2) {
+    const a = items[0].raw, b = items[1].raw;
+    const dist = (ia, ib) => Math.hypot(a[ia].x-b[ib].x, a[ia].y-b[ib].y, (a[ia].z||0)-(b[ib].z||0));
+    const wristDist = dist(0,0);
+    const indexTipDist = dist(8,8);
+    const middleTipDist = dist(12,12);
+    const thumbTipDist = dist(4,4);
+    const pinkyTipDist = dist(20,20);
+    const centerAx = avg(a.map(p=>p.x)), centerAy = avg(a.map(p=>p.y));
+    const centerBx = avg(b.map(p=>p.x)), centerBy = avg(b.map(p=>p.y));
+    vector.push(wristDist, indexTipDist, middleTipDist, thumbTipDist, pinkyTipDist);
+    vector.push(centerBx - centerAx, centerBy - centerAy);
+    vector.push(Math.abs(centerBx - centerAx), Math.abs(centerBy - centerAy));
+  } else {
+    for (let i=0; i<9; i++) vector.push(0);
+  }
+
+  return {
+    handsCount,
+    vector,
+    handedness: items.map(x => x.handedness).join("|"),
+    rawLandmarks: items.map(x => x.raw.map(p => ({x:p.x, y:p.y, z:p.z || 0})))
+  };
+}
+
+function avg(arr) {
+  return arr.reduce((a,b)=>a+b,0) / Math.max(1, arr.length);
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function roiRectPx() {
+  const box = els.video.getBoundingClientRect();
+  const size = Math.min(box.width, box.height) * state.roi.size;
+  const left = clamp(state.roi.cx * box.width - size / 2, 0, Math.max(0, box.width - size));
+  const top = clamp(state.roi.cy * box.height - size / 2, 0, Math.max(0, box.height - size));
+  return { left, top, size, width: box.width, height: box.height };
+}
+
+function renderRoi(isInside = state.roi.lastInside) {
+  const rect = roiRectPx();
+  els.roiBox.style.left = `${rect.left}px`;
+  els.roiBox.style.top = `${rect.top}px`;
+  els.roiBox.style.width = `${rect.size}px`;
+  els.roiBox.style.height = `${rect.size}px`;
+  els.roiBox.classList.toggle("outside", isInside === false);
+}
+
+function featureInRoi(feature) {
+  const rect = roiRectPx();
+  const x0 = rect.left / Math.max(1, rect.width);
+  const y0 = rect.top / Math.max(1, rect.height);
+  const x1 = (rect.left + rect.size) / Math.max(1, rect.width);
+  const y1 = (rect.top + rect.size) / Math.max(1, rect.height);
+  const handCenters = (feature.rawLandmarks || []).map(hand => {
+    const center = hand.reduce((acc, p) => {
+      acc.x += state.mirror ? 1 - p.x : p.x;
+      acc.y += p.y;
+      return acc;
+    }, { x: 0, y: 0 });
+    center.x /= Math.max(1, hand.length);
+    center.y /= Math.max(1, hand.length);
+    return center;
+  });
+  const inside = handCenters.length > 0
+    && handCenters.every(p => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1);
+  state.roi.lastInside = inside;
+  return { inside, handCenters };
+}
+
+function distance(a, b) {
+  let sum = 0;
+  const n = Math.min(a.length, b.length);
+  for (let i=0; i<n; i++) {
+    const d = a[i] - b[i];
+    sum += d*d;
+  }
+  return Math.sqrt(sum);
+}
+
+function classify(feature) {
+  if (!feature || state.samples.length < 2) return null;
+
+  // 同じ検出手数を優先。ただし少なすぎる場合は全体を使う
+  let pool = state.samples.filter(s => s.handsCount === feature.handsCount);
+  if (pool.length < 3) pool = state.samples;
+
+  const neighbors = pool
+    .map(s => ({
+      label: s.label,
+      d: distance(feature.vector, s.vector),
+      handsCount: s.handsCount
+    }))
+    .sort((a,b)=>a.d-b.d)
+    .slice(0, Math.min(state.classifierK, pool.length));
+
+  const scores = {};
+  for (const n of neighbors) {
+    const w = 1 / Math.max(n.d, 1e-6);
+    scores[n.label] = (scores[n.label] || 0) + w;
+  }
+  const total = Object.values(scores).reduce((a,b)=>a+b,0) || 1;
+  const ranked = Object.entries(scores)
+    .map(([label, score]) => ({ label, score: score / total }))
+    .sort((a,b)=>b.score-a.score);
+
+  return {
+    label: ranked[0]?.label || "---",
+    score: ranked[0]?.score || 0,
+    ranked,
+    neighbors
+  };
+}
+
+function updateLive(feature) {
+  if (!feature) {
+    els.liveLabel.textContent = "---";
+    els.liveScore.textContent = "0%";
+    els.prediction.textContent = "手なし";
+    els.scoreBar.style.width = "0%";
+    els.topScores.textContent = `samples: ${state.samples.length}`;
+    els.featurePreview.textContent = "features: no hand";
+    return;
+  }
+
+  const result = classify(feature);
+  if (!result) {
+    els.liveLabel.textContent = "---";
+    els.liveScore.textContent = "0%";
+    els.prediction.textContent = `未学習 / ${feature.handsCount}手`;
+    els.scoreBar.style.width = "0%";
+    els.topScores.textContent = `samples: ${state.samples.length}`;
+    els.featurePreview.textContent = `hands=${feature.handsCount}, handedness=${feature.handedness}, vector=${feature.vector.length} dims`;
+    return;
+  }
+
+  const pct = Math.round(result.score * 100);
+  els.liveLabel.textContent = signText(result.label);
+  els.liveScore.textContent = `${pct}%`;
+  els.prediction.textContent = `${signText(result.label)} / ${feature.handsCount}手`;
+  els.scoreBar.style.width = `${pct}%`;
+  els.topScores.textContent = result.ranked.slice(0,5).map(r => `${r.label}:${Math.round(r.score*100)}%`).join("  ");
+  els.featurePreview.textContent = `hands=${feature.handsCount}, handedness=${feature.handedness}, vector=${feature.vector.length} dims`;
+}
+
+function updateOutsideRoi(feature) {
+  els.liveLabel.textContent = "---";
+  els.liveScore.textContent = "0%";
+  els.prediction.textContent = "印領域の外";
+  els.scoreBar.style.width = "0%";
+  els.topScores.textContent = "手の中心を黄色い印領域に入れてください";
+  els.featurePreview.textContent = `hands=${feature.handsCount}, handedness=${feature.handedness}, ROI=outside`;
+}
+
+function saveCurrent(label = state.currentLabel) {
+  const f = state.latestFeature;
+  if (!f || f.handsCount < 1) {
+    setStatus("手が検出できていないため保存できません");
+    return false;
+  }
+  const roiCheck = featureInRoi(f);
+  renderRoi(roiCheck.inside);
+  if (!roiCheck.inside) {
+    setStatus("印領域の外に手があるため保存しません。手の中心を黄色い枠内に入れてください");
+    return false;
+  }
+  const sample = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    timestamp: new Date().toISOString(),
+    label,
+    labelText: signText(label),
+    handsCount: f.handsCount,
+    handedness: f.handedness,
+    vector: [...f.vector],
+    landmarks: f.rawLandmarks
+  };
+  state.samples.push(sample);
+  refresh();
+  setStatus(`${signText(label)} を保存しました（${f.handsCount}手）`);
+  return true;
+}
+
+async function burst(label, count) {
+  if (state.busy || !state.camera) return;
+  setBusy(true);
+  try {
+    await countdown(3);
+    let saved = 0;
+    for (let i = 1; i <= count; i++) {
+      setStatus(`REC ${signText(label)} ${i}/${count}。印を維持してください`);
+      const ok = saveCurrent(label);
+      if (ok) saved++;
+      await wait(350);
+    }
+    setStatus(`${signText(label)}: ${saved}/${count} サンプル保存しました`);
+  } finally {
+    els.countdown.style.display = "none";
+    setBusy(false);
+  }
+}
+
+function toCsv() {
+  if (state.samples.length === 0) return "";
+  const maxLen = Math.max(...state.samples.map(s => s.vector.length));
+  const header = ["id","timestamp","label","labelText","handsCount","handedness"];
+  for (let i=0; i<maxLen; i++) header.push(`f${i}`);
+  const rows = [header];
+  for (const s of state.samples) {
+    const row = [
+      s.id,
+      s.timestamp,
+      s.label,
+      s.labelText,
+      s.handsCount,
+      s.handedness
+    ];
+    for (let i=0; i<maxLen; i++) row.push(s.vector[i] ?? "");
+    rows.push(row);
+  }
+  return rows.map(row => row.map(csvCell).join(",")).join("\n");
+}
+
+function csvCell(v) {
+  const s = String(v ?? "");
+  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function download(filename, text, type = "text/plain") {
+  const blob = new Blob([text], {type});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function downloadCsv() {
+  download(`naruto_12sign_mediapipe_features_${timestamp()}.csv`, toCsv(), "text/csv");
+}
+
+function downloadJson() {
+  const payload = {
+    app: "naruto_12sign_mediapipe_tester",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    signs: SIGNS,
+    samples: state.samples
+  };
+  download(`naruto_12sign_mediapipe_samples_${timestamp()}.json`, JSON.stringify(payload, null, 2), "application/json");
+}
+
+function clearSamples() {
+  if (!confirm("保存済みサンプルをすべて削除しますか？")) return;
+  state.samples = [];
+  refresh();
+  setStatus("全サンプルを削除しました");
+}
+
+function loadJsonFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      const loaded = Array.isArray(data.samples) ? data.samples : Array.isArray(data) ? data : [];
+      if (!loaded.length) throw new Error("samples が見つかりません");
+      state.samples = loaded.filter(s => s.label && Array.isArray(s.vector));
+      refresh();
+      setStatus(`${state.samples.length} サンプルを読み込みました`);
+    } catch (e) {
+      console.error(e);
+      setStatus(`JSON読込失敗: ${e.message}`);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function summaryText() {
+  const lines = [];
+  lines.push("12印 MediaPipe サンプル集計");
+  lines.push(`total: ${state.samples.length}`);
+  for (const sign of SIGNS) {
+    const arr = state.samples.filter(s => s.label === sign.id);
+    const one = arr.filter(s => s.handsCount === 1).length;
+    const two = arr.filter(s => s.handsCount === 2).length;
+    if (arr.length) lines.push(`${sign.romaji}/${sign.jp}: ${arr.length} samples, 1hand=${one}, 2hands=${two}`);
+  }
+  return lines.join("\n");
+}
+
+async function copySummary() {
+  const text = summaryText();
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus("集計をコピーしました");
+  } catch {
+    setStatus(text);
+  }
+}
+
+function toggleMirror() {
+  state.mirror = !state.mirror;
+  els.video.style.transform = state.mirror ? "scaleX(-1)" : "none";
+  els.toggleMirror.textContent = state.mirror ? "鏡像表示ON" : "鏡像表示OFF";
+  if (state.latestFeature) {
+    renderRoi(featureInRoi(state.latestFeature).inside);
+  }
+}
+
+function bindRoiDrag() {
+  els.roiBox.addEventListener("pointerdown", event => {
+    const mode = event.target === els.roiHandle ? "resize" : "move";
+    const box = els.video.getBoundingClientRect();
+    state.roiDrag = {
+      mode,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startCx: state.roi.cx,
+      startCy: state.roi.cy,
+      startSize: state.roi.size,
+      boxW: box.width,
+      boxH: box.height
+    };
+    els.roiBox.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+
+  els.roiBox.addEventListener("pointermove", event => {
+    const drag = state.roiDrag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (drag.mode === "move") {
+      state.roi.cx = clamp(drag.startCx + dx / Math.max(1, drag.boxW), 0.08, 0.92);
+      state.roi.cy = clamp(drag.startCy + dy / Math.max(1, drag.boxH), 0.08, 0.92);
+    } else {
+      const delta = Math.max(dx, dy) / Math.max(1, Math.min(drag.boxW, drag.boxH));
+      state.roi.size = clamp(drag.startSize + delta, 0.25, 0.85);
+    }
+    const inside = state.latestFeature ? featureInRoi(state.latestFeature).inside : null;
+    renderRoi(inside);
+    event.preventDefault();
+  });
+
+  const endDrag = event => {
+    if (state.roiDrag && state.roiDrag.pointerId === event.pointerId) {
+      state.roiDrag = null;
+    }
+  };
+  els.roiBox.addEventListener("pointerup", endDrag);
+  els.roiBox.addEventListener("pointercancel", endDrag);
+}
+
+els.startCamera.addEventListener("click", startCamera);
+els.burst10.addEventListener("click", () => burst(state.currentLabel, 10));
+els.burst20.addEventListener("click", () => burst(state.currentLabel, 20));
+els.singleSave.addEventListener("click", () => saveCurrent(state.currentLabel));
+els.transition10.addEventListener("click", () => burst("transition", 10));
+els.transition20.addEventListener("click", () => burst("transition", 20));
+els.downloadCsv.addEventListener("click", downloadCsv);
+els.downloadJson.addEventListener("click", downloadJson);
+els.clearSamples.addEventListener("click", clearSamples);
+els.loadJson.addEventListener("click", () => els.jsonFile.click());
+els.jsonFile.addEventListener("change", e => {
+  const file = e.target.files?.[0];
+  if (file) loadJsonFile(file);
+  e.target.value = "";
+});
+els.copySummary.addEventListener("click", copySummary);
+els.toggleMirror.addEventListener("click", toggleMirror);
+
+bindRoiDrag();
+renderLabels();
+refresh();
+renderRoi(null);
+window.addEventListener("resize", () => renderRoi(state.roi.lastInside));
+</script>
+</body>
+</html>

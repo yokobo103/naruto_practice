@@ -1,0 +1,42 @@
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+tmp/
+temp/
+.cache/
+
+# Local dev dependencies / build outputs
+node_modules/
+dist/
+build/
+.vite/
+.parcel-cache/
+coverage/
+
+# Python caches / local virtualenvs
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Teachable Machine時代に撮った学習用の画像（267MB / 2820枚）。
+# ローカルには残すが公開リポジトリには入れない。
+dataset/
+*.zip
+
+# 過去世代（Teachable Machine版・静止ホールド版）。
+# 試行錯誤の記録としてローカルには残すが、公開リポジトリには入れない。
+# 学習済みモデル(2.1MB×2)や旧サンプルJSON(3〜4MB)が重いため。
+# 中身の説明は archive/README.md にある。
+archive/

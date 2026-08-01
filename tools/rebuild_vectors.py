@@ -10,6 +10,13 @@ y を縦横比で割って「幅を単位とする等方座標」に直すと端
 
     python tools/rebuild_vectors.py dataset/signs_full_20260731.json data/signs.json
 
+生データは複数指定できる。PCで撮ったものとスマホで撮ったものを混ぜるときに使う:
+
+    python tools/rebuild_vectors.py dataset/pc.json dataset/phone.json data/signs.json
+
+サンプルに aspect が入っていればそれを使い、無ければ TRAIN_ASPECT を使う
+（2026-07-31以前に撮ったデータには aspect が入っていない）。
+
 index.html の extractFeature / fingerFeatures / normalizeHand の移植。
 --verify を付けると、補正なしで計算した結果が元のJSONのvectorと一致するかを確認する
 （＝移植が正しいことの証明）。
@@ -114,51 +121,73 @@ def extract_vector(hands, hands_count=None):
     return vector
 
 
-def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    verify = "--verify" in sys.argv
-    if len(args) != 2:
-        raise SystemExit(f"usage: python {sys.argv[0]} <生データ.json> <出力先.json> [--verify]")
-    src, dst = args
-
-    with open(src, encoding="utf-8") as f:
+def load(path):
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
     samples = data.get("samples") or []
     if not samples or "landmarks" not in samples[0]:
-        raise SystemExit(f"{src} に landmarks がありません（生データを指定してください）")
+        raise SystemExit(f"{path} に landmarks がありません（生データを指定してください）")
+    return data, samples
+
+
+def main():
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    verify = "--verify" in sys.argv
+    if len(args) < 2:
+        raise SystemExit(
+            f"usage: python {sys.argv[0]} <生データ.json> [生データ2.json ...] <出力先.json> [--verify]"
+        )
+    *srcs, dst = args
 
     if verify:
         # 補正なしで計算し、元のvectorと一致するか（＝移植が正しいか）を確かめる
-        worst = 0.0
-        for s in samples:
-            got = extract_vector(s["landmarks"], s["handsCount"])
-            worst = max(worst, max(abs(a - b) for a, b in zip(got, s["vector"])))
-        print(f"移植の検証: 元のvectorとの最大差 {worst:.3e}")
-        if worst > 1e-9:
-            raise SystemExit("一致しません。移植が誤っています")
-        print("→ 一致。移植は正しい")
+        for src in srcs:
+            _, samples = load(src)
+            worst = max(
+                max(abs(a - b) for a, b in zip(extract_vector(s["landmarks"], s["handsCount"]), s["vector"]))
+                for s in samples
+            )
+            status = "一致" if worst <= 1e-9 else "不一致"
+            print(f"{src}: 元のvectorとの最大差 {worst:.3e} → {status}")
+            if worst > 1e-9:
+                raise SystemExit("移植が誤っています")
+        print("→ 移植は正しい")
         return
 
+    first, _ = load(srcs[0])
     out = {
-        "app": data.get("app"),
-        "version": data.get("version"),
-        "exportedAt": data.get("exportedAt"),
+        "app": first.get("app"),
+        "version": first.get("version"),
         "aspectCorrected": True,
-        "trainAspect": TRAIN_ASPECT,
+        "defaultAspect": TRAIN_ASPECT,
+        "sources": [],
         "note": (
             "y を縦横比で割った等方座標で特徴量を作り直したもの。"
             "landmarksは除き、vectorは小数5桁。生データは dataset/ を参照（git管理外）"
         ),
-        "signs": data.get("signs"),
+        "signs": first.get("signs"),
         "samples": [],
     }
-    for s in samples:
-        hands = to_isotropic(s["landmarks"], TRAIN_ASPECT)
-        out["samples"].append({
-            "label": s["label"],
-            "handsCount": s["handsCount"],
-            "handedness": s["handedness"],
-            "vector": [round(v, 5) for v in extract_vector(hands, s["handsCount"])],
+
+    aspects = {}
+    for src in srcs:
+        data, samples = load(src)
+        for s in samples:
+            # サンプルに記録された縦横比を優先する。無ければ既定値
+            # （2026-07-31以前のデータには入っていない）
+            a = s.get("aspect") or TRAIN_ASPECT
+            aspects[round(a, 4)] = aspects.get(round(a, 4), 0) + 1
+            hands = to_isotropic(s["landmarks"], a)
+            out["samples"].append({
+                "label": s["label"],
+                "handsCount": s["handsCount"],
+                "handedness": s["handedness"],
+                "vector": [round(v, 5) for v in extract_vector(hands, s["handsCount"])],
+            })
+        out["sources"].append({
+            "file": os.path.basename(src),
+            "exportedAt": data.get("exportedAt"),
+            "count": len(samples),
         })
 
     os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
@@ -166,8 +195,10 @@ def main():
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
     print(
         f"{dst} を作成 / {len(out['samples'])} サンプル / "
-        f"{os.path.getsize(dst) / 1048576:.2f} MB / 縦横比補正 {TRAIN_ASPECT:.4f}"
+        f"{os.path.getsize(dst) / 1048576:.2f} MB"
     )
+    for a, n in sorted(aspects.items()):
+        print(f"  縦横比 {a:.4f}: {n} サンプル")
 
 
 if __name__ == "__main__":

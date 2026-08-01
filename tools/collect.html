@@ -919,6 +919,13 @@ function saveCurrent(label = state.currentLabel) {
     setStatus("印領域の外に手があるため保存しません。手の中心を黄色い枠内に入れてください");
     return false;
   }
+  // カメラの縦横比を必ず一緒に残す。
+  // MediaPipeは x を幅、y を高さで正規化して返すので、端末が違うと x:y の比が変わる。
+  // これを記録しておかないと、PCで撮ったデータとスマホで撮ったデータを混ぜられない
+  // （tools/rebuild_vectors.py がサンプルごとにこの値で補正する）。
+  const v = els.video;
+  const camW = v && v.videoWidth ? v.videoWidth : null;
+  const camH = v && v.videoHeight ? v.videoHeight : null;
   const sample = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     timestamp: new Date().toISOString(),
@@ -926,6 +933,10 @@ function saveCurrent(label = state.currentLabel) {
     labelText: signText(label),
     handsCount: f.handsCount,
     handedness: f.handedness,
+    camWidth: camW,
+    camHeight: camH,
+    aspect: camW && camH ? camW / camH : null,
+    device: navigator.userAgent.slice(0, 120),
     vector: [...f.vector],
     landmarks: f.rawLandmarks
   };

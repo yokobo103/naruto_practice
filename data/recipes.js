@@ -34,7 +34,24 @@ const JUTSU_RECIPES = [
   { id: "kawara",    name: "忍法・瓦手裏剣",     signs: ["tora", "tatsu", "ne", "tora"],              element: "earth" },
   { id: "kuchiyose", name: "口寄せの術",         signs: ["i", "inu", "tori", "saru", "hitsuji"],      element: "neutral" },
   { id: "goukakyu",  name: "火遁・豪火球の術",   signs: ["mi", "hitsuji", "saru", "i", "uma", "tora"], element: "fire" },
-  { id: "housenka",  name: "火遁・鳳仙火の術",   signs: ["ne", "tora", "inu", "ushi", "u", "tora"],   element: "fire" }
+  { id: "housenka",  name: "火遁・鳳仙火の術",   signs: ["ne", "tora", "inu", "ushi", "u", "tora"],   element: "fire" },
+
+  // 全44印。原典で最長とされる術。ネタ枠。
+  //
+  // 元の並びには 21印目と41印目に「壬」が入っているが、壬は十干（みずのえ）で
+  // 十二支ではない。このセンサーが認識できるのは子丑寅卯辰巳午未申酉戌亥の12種
+  // だけなので、その2つを抜いた42印にしてある。正しい印が判明したら足すこと。
+  //
+  // 既存15種のどれもこの並びの途中には現れないことを確認済み（暴発なし）。
+  { id: "suiryudan", name: "水遁・水龍弾の術",
+    signs: [
+      "ushi", "saru", "u", "ne", "i", "tori", "ushi", "uma", "tori", "ne",
+      "tora", "inu", "tora", "mi", "ushi", "hitsuji", "mi", "i", "hitsuji", "ne",
+      /* 壬 */ "saru", "tori", "tatsu", "tori", "ushi", "uma", "hitsuji", "tora", "mi", "ne",
+      "saru", "u", "i", "tatsu", "hitsuji", "ne", "ushi", "saru", "tori",
+      /* 壬 */ "ne", "i", "tori"
+    ],
+    element: "water" }
 ];
 
 const ELEMENT_STYLE = {
@@ -43,6 +60,7 @@ const ELEMENT_STYLE = {
   ice:       { label: "氷", color: "#9fd8ff", glow: "#e8f7ff" },
   wood:      { label: "木", color: "#7fdc8a", glow: "#d4ffcf" },
   earth:     { label: "土", color: "#d0a066", glow: "#ffe1b0" },
+  water:     { label: "水", color: "#5bc8ff", glow: "#d6f2ff" },
   neutral:   { label: "印", color: "#a9b4ff", glow: "#e6ebff" }
 };
 

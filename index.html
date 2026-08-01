@@ -526,6 +526,12 @@
     .rSigns { display: flex; gap: 3px; margin-top: 5px; flex-wrap: wrap; }
     .sChip { font-size: 12px; padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,.06); }
     .sChip.on { background: #ffd166; color: #10131c; font-weight: 700; }
+    .sChip.next { background: #5bc8ff; color: #10131c; font-weight: 700; }
+    .sChip.dim { opacity: .4; }
+    .rCount { font-size: 11px; opacity: .6; align-self: center; margin-right: 4px; font-variant-numeric: tabular-nums; }
+    .rProgress { height: 3px; border-radius: 999px; background: rgba(255,255,255,.08); margin-top: 6px; overflow: hidden; }
+    .rProgress > div { height: 100%; background: #5bc8ff; transition: width .15s ease; }
+    .signStrip .step.more { opacity: .45; }
     /* 印の履歴が消えるまでの残り時間。積んでいる印がないときは出さない
        （全幅の派手なバーが常時光っていると警告に見える） */
     .timerBar {
@@ -1962,7 +1968,15 @@ function renderSequence() {
     div.innerHTML = `<div class="jp">—</div><div class="id">印を結ぶ</div>`;
     els.sequenceSteps.appendChild(div);
   } else {
-    hist.forEach(h => {
+    // 水龍弾のような長い術があるので、全部並べると画面が埋まる。末尾だけ出す。
+    const STRIP_MAX = 10;
+    if (hist.length > STRIP_MAX) {
+      const more = document.createElement("div");
+      more.className = "step more";
+      more.innerHTML = `<div class="jp">…</div><div class="id">+${hist.length - STRIP_MAX}</div>`;
+      els.sequenceSteps.appendChild(more);
+    }
+    hist.slice(-STRIP_MAX).forEach(h => {
       const s = signDef(h.label);
       const div = document.createElement("div");
       div.className = "step done";
@@ -1983,8 +1997,12 @@ function renderSequence() {
   // 「あと1つで雷切だ」という緊張が生まれる。
   const ranked = JUTSU_RECIPES
     .map(r => ({ r, p: recipeProgress(hist, r) }))
-    // 残り印数が同じなら、既に結び始めているものを上に出す
+    // 3印以上進んでいるものは、残りが多くても最上段に出す。
+    // 水龍弾のような長い術は「あと22印」で下に埋もれてしまい、
+    // いま自分が結んでいる最中の術が見えなくなるため。
+    // 短い術は3印目で発動するので、この扱いになるのは長い術だけ。
     .sort((a, b) =>
+      (b.p.matched >= 3) - (a.p.matched >= 3) ||
       a.p.remaining - b.p.remaining ||
       b.p.matched - a.p.matched ||
       a.r.signs.length - b.r.signs.length);
@@ -1994,16 +2012,29 @@ function renderSequence() {
     const st = ELEMENT_STYLE[r.element] || ELEMENT_STYLE.neutral;
     const row = document.createElement("div");
     row.className = `recipeRow${p.matched > 0 ? " lit" : ""}`;
-    const chips = r.signs.map((id, i) =>
-      `<span class="sChip${i < p.matched ? " on" : ""}">${signDef(id).jp}</span>`
-    ).join("");
+    // 印が多い術は全部並べない。進捗バーと「次に結ぶ印」を出す。
+    const LONG = 9;
+    let body;
+    if (r.signs.length > LONG) {
+      const next = r.signs.slice(p.matched, p.matched + 5)
+        .map((id, i) => `<span class="sChip${i === 0 ? " next" : ""}">${signDef(id).jp}</span>`).join("");
+      body = `
+        <div class="rProgress"><div style="width:${Math.round(p.matched / r.signs.length * 100)}%"></div></div>
+        <div class="rSigns">
+          <span class="rCount">${p.matched}/${r.signs.length}</span>${next}
+          ${p.matched + 5 < r.signs.length ? '<span class="sChip dim">…</span>' : ""}
+        </div>`;
+    } else {
+      const chips = r.signs.map((id, i) =>
+        `<span class="sChip${i < p.matched ? " on" : ""}">${signDef(id).jp}</span>`).join("");
+      body = `<div class="rSigns">${chips}</div>`;
+    }
     row.innerHTML = `
       <div class="rHead">
         <span class="rElem" style="background:${st.color}">${st.label}</span>
         <span class="rName">${escapeHtml(r.name)}</span>
         <span class="rRemain">${p.remaining === 0 ? "発動" : `あと${p.remaining}`}</span>
-      </div>
-      <div class="rSigns">${chips}</div>`;
+      </div>${body}`;
     els.recipeList.appendChild(row);
   }
 

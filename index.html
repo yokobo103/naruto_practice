@@ -754,6 +754,40 @@
     @media (min-width: 900px) {
       .cameraBox { aspect-ratio: 16 / 10; }
     }
+    /* ===== 影分身 ===== */
+    .cloneFig {
+      position: absolute;
+      left: 50%; top: 50%;
+      height: 100%;
+      width: auto;
+      transform: translate(-50%, -50%) scaleX(-1);   /* 映像は鏡像で見せているので合わせる */
+      transform-origin: center;
+      opacity: 0;
+      animation: cloneIn .42s cubic-bezier(.2,1.3,.4,1) forwards;
+      filter: drop-shadow(0 0 14px rgba(150,190,255,.35));
+      pointer-events: none;
+    }
+    @keyframes cloneIn {
+      0%   { opacity: 0; transform: translate(-50%, -50%) scaleX(-1) scale(.55); }
+      60%  { opacity: 1; }
+      100% { opacity: .96;
+             transform: translate(calc(-50% + var(--tx)), -50%) scaleX(-1) scale(var(--sc)); }
+    }
+    .smoke {
+      position: absolute;
+      width: 90px; height: 90px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(232,238,246,.92), rgba(190,200,215,.55) 45%, transparent 72%);
+      opacity: 0;
+      animation: smokePuff 1.1s ease-out forwards;
+      pointer-events: none;
+      mix-blend-mode: screen;
+    }
+    @keyframes smokePuff {
+      0%   { opacity: 0; transform: translate(0,0) scale(.25); }
+      22%  { opacity: .95; }
+      100% { opacity: 0; transform: translate(var(--dx), -70px) scale(var(--s)); }
+    }
   </style>
 </head>
 <body>
@@ -2143,6 +2177,113 @@ function updateSequenceTimer() {
   }
 }
 
+// ===== 影分身: 術者を増やす =====
+//
+// 発動した瞬間の映像を1枚だけ切り抜いて、それを複製して並べる。
+// 人物の形に抜くために MediaPipe Selfie Segmentation を使うが、
+// 毎フレームではなく発動時に1回だけ走らせるので負荷はほぼ無い。
+// ライブラリは初回発動時に読み込む（起動を遅くしないため）。
+// 読み込めない環境では分身を出さず、通常の演出だけにする。
+
+let segmenter = null;
+let segmenterLoading = null;
+
+function loadSegmenter() {
+  if (segmenter) return Promise.resolve(segmenter);
+  if (segmenterLoading) return segmenterLoading;
+  segmenterLoading = new Promise((resolve, reject) => {
+    const tag = document.createElement("script");
+    tag.src = "https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js";
+    tag.onload = () => {
+      try {
+        const seg = new SelfieSegmentation({
+          locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}`
+        });
+        seg.setOptions({ modelSelection: 1 });
+        segmenter = seg;
+        resolve(seg);
+      } catch (e) { reject(e); }
+    };
+    tag.onerror = () => reject(new Error("selfie_segmentation の読み込みに失敗"));
+    document.head.appendChild(tag);
+  });
+  return segmenterLoading;
+}
+
+// いまの映像から人物だけを切り抜いた canvas を作る
+function cutoutPerson() {
+  return loadSegmenter().then(seg => new Promise((resolve, reject) => {
+    const v = els.video;
+    if (!v || !v.videoWidth) { reject(new Error("映像がありません")); return; }
+    const w = v.videoWidth, h = v.videoHeight;
+
+    const timer = setTimeout(() => reject(new Error("切り抜きがタイムアウト")), 4000);
+    seg.onResults(res => {
+      clearTimeout(timer);
+      try {
+        const out = document.createElement("canvas");
+        out.width = w; out.height = h;
+        const ctx = out.getContext("2d");
+        // マスクを敷いてから、重なる部分だけ映像を描く
+        ctx.drawImage(res.segmentationMask, 0, 0, w, h);
+        ctx.globalCompositeOperation = "source-in";
+        ctx.drawImage(v, 0, 0, w, h);
+        ctx.globalCompositeOperation = "source-over";
+        resolve(out);
+      } catch (e) { reject(e); }
+    });
+    seg.send({ image: v }).catch(reject);
+  }));
+}
+
+async function fireCloneEffect(recipe) {
+  const n = Math.max(1, Math.min(6, recipe.clones || 3));
+  // まず煙を出す。切り抜きを待つ間の「間」をここが埋める
+  puffSmoke(n);
+  let cut;
+  try {
+    cut = await cutoutPerson();
+  } catch (e) {
+    addLog(`CLONE 切り抜きできず（${e.message}）。煙だけ出します`);
+    return;
+  }
+  const box = els.jutsuEffect;
+  // 左右に振り分けて並べる。中央は本体（実際の映像）なので空けておく
+  const slots = [];
+  for (let i = 0; i < n; i++) {
+    const side = i % 2 === 0 ? -1 : 1;
+    const step = Math.floor(i / 2) + 1;
+    slots.push(side * step);
+  }
+  slots.forEach((slot, i) => {
+    const c = cut.cloneNode();
+    c.getContext("2d").drawImage(cut, 0, 0);
+    c.className = "cloneFig";
+    const scale = 0.78 - Math.abs(slot) * 0.06;
+    c.style.setProperty("--tx", `${slot * 26}%`);
+    c.style.setProperty("--sc", scale.toFixed(2));
+    c.style.zIndex = String(10 - Math.abs(slot));
+    c.style.animationDelay = `${0.05 + i * 0.07}s`;
+    box.appendChild(c);
+  });
+  addLog(`CLONE ${n}体`);
+}
+
+// 分身が現れる煙
+function puffSmoke(n) {
+  const box = els.jutsuEffect;
+  for (let i = 0; i < n * 5 + 6; i++) {
+    const p = document.createElement("div");
+    p.className = "smoke";
+    p.style.left = `${18 + Math.random() * 64}%`;
+    p.style.top = `${40 + Math.random() * 34}%`;
+    p.style.setProperty("--s", (0.7 + Math.random() * 1.5).toFixed(2));
+    p.style.setProperty("--dx", `${(Math.random() - .5) * 220}px`);
+    p.style.animationDelay = `${Math.random() * 0.22}s`;
+    box.appendChild(p);
+  }
+}
+
 function fireJutsu(recipe) {
   playJutsuSound();
   const st = ELEMENT_STYLE[recipe.element] || ELEMENT_STYLE.neutral;
@@ -2150,9 +2291,11 @@ function fireJutsu(recipe) {
   els.jutsuEffect.style.setProperty("--elemGlow", st.glow);
   els.jutsuText.style.color = st.glow;
   els.jutsuText.textContent = `${recipe.name}！`;
-  els.jutsuEffect.innerHTML = '<div class="fireWave"></div><div class="fireRing"></div>';
+  els.jutsuEffect.innerHTML = recipe.effect === "clone"
+    ? ""                                        // 分身は炎を出さない
+    : '<div class="fireWave"></div><div class="fireRing"></div>';
   // 印数が多い術ほど派手にする
-  const embers = 16 + recipe.signs.length * 5;
+  const embers = recipe.effect === "clone" ? 0 : 16 + recipe.signs.length * 5;
   for (let i = 0; i < embers; i++) {
     const ember = document.createElement("div");
     ember.className = "ember";
@@ -2168,6 +2311,15 @@ function fireJutsu(recipe) {
   void els.jutsuEffect.offsetWidth;
   els.jutsuEffect.classList.add("active");
   els.jutsuText.classList.add("active");
+
+  if (recipe.effect === "clone") {
+    fireCloneEffect(recipe);
+    setTimeout(() => {
+      els.jutsuEffect.classList.remove("active");
+      els.jutsuEffect.innerHTML = "";
+    }, 3200);
+    return;
+  }
   setTimeout(() => els.jutsuEffect.classList.remove("active"), 1500);
 }
 

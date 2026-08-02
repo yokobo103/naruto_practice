@@ -20,7 +20,8 @@
 // （外道・輪廻天生「未→巳」は分身の術「未→巳→寅」の途中で必ず暴発するため外した）。
 // 水遁・黒雨は分身の術と完全に同一（未→巳→寅）だったため外した。
 const JUTSU_RECIPES = [
-  { id: "bunshin",   name: "分身の術",           signs: ["hitsuji", "mi", "tora"],                    element: "neutral" },
+  // effect を書くと専用の演出になる。省略すると既定の爆発系。
+  { id: "bunshin",   name: "分身の術",           signs: ["hitsuji", "mi", "tora"],                    element: "neutral", effect: "clone", clones: 4 },
   { id: "henge",     name: "変身の術",           signs: ["inu", "i", "hitsuji"],                      element: "neutral" },
   { id: "raikiri",   name: "雷遁・雷切",         signs: ["ushi", "u", "saru"],                        element: "lightning" },
   { id: "haisekisho", name: "火遁・灰積焼",      signs: ["mi", "ne", "tora"],                         element: "fire" },

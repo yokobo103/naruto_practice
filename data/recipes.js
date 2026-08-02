@@ -38,18 +38,18 @@ const JUTSU_RECIPES = [
 
   // 全44印。原典で最長とされる術。ネタ枠。
   //
-  // 元の並びには 21印目と41印目に「壬」が入っているが、壬は十干（みずのえ）で
-  // 十二支ではない。このセンサーが認識できるのは子丑寅卯辰巳午未申酉戌亥の12種
-  // だけなので、その2つを抜いた42印にしてある。正しい印が判明したら足すこと。
+  // 21印目と41印目の「壬」は十二支ではなく十干（みずのえ）。
+  // 13番目の印として扱えるようにしたので、原典どおり44印で入れてある。
+  // 壬の学習データを集めるまでは、この術だけ成立しない。
   //
   // 既存15種のどれもこの並びの途中には現れないことを確認済み（暴発なし）。
   { id: "suiryudan", name: "水遁・水龍弾の術",
     signs: [
       "ushi", "saru", "u", "ne", "i", "tori", "ushi", "uma", "tori", "ne",
       "tora", "inu", "tora", "mi", "ushi", "hitsuji", "mi", "i", "hitsuji", "ne",
-      /* 壬 */ "saru", "tori", "tatsu", "tori", "ushi", "uma", "hitsuji", "tora", "mi", "ne",
-      "saru", "u", "i", "tatsu", "hitsuji", "ne", "ushi", "saru", "tori",
-      /* 壬 */ "ne", "i", "tori"
+      "mizunoe", "saru", "tori", "tatsu", "tori", "ushi", "uma", "hitsuji", "tora", "mi",
+      "ne", "saru", "u", "i", "tatsu", "hitsuji", "ne", "ushi", "saru", "tori",
+      "mizunoe", "ne", "i", "tori"
     ],
     element: "water" }
 ];

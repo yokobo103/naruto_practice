@@ -105,8 +105,10 @@
       border: 1px solid var(--line);
       border-radius: 12px;
       box-shadow: var(--shadow);
-      aspect-ratio: 4 / 3;
-      min-height: 300px;
+      /* min-height と aspect-ratio を併記すると、高さが優先されて幅がはみ出す。
+         幅を基準にして高さを決める。スマホは縦持ちなので縦長の枠にする。 */
+      width: 100%;
+      aspect-ratio: 3 / 4;
     }
     video, canvas {
       position: absolute;
@@ -332,7 +334,7 @@
     @media (min-width: 900px) {
       .summary { grid-template-columns: repeat(5, minmax(0, 1fr)); }
       .workspace { grid-template-columns: 1.55fr .9fr; align-items: start; }
-      .cameraBox { min-height: 520px; }
+      .cameraBox { aspect-ratio: 4 / 3; min-height: 520px; }
       .labels { grid-template-columns: repeat(7, minmax(0, 1fr)); }
       .actions { grid-template-columns: repeat(6, minmax(0, 1fr)); }
       .burstActions { grid-template-columns: repeat(6, minmax(0, 1fr)); }
@@ -404,6 +406,7 @@
 
   <footer class="controls">
     <div class="controlsInner">
+      <div class="tiny" id="camInfo">カメラ: ---</div>
       <div class="labels" id="labelButtons"></div>
 
       <div class="burstActions">
@@ -418,11 +421,13 @@
       <div class="actions">
         <button id="transition10" disabled>transition 10連続</button>
         <button id="transition20" disabled>transition 20連続</button>
+        <button class="blue" id="shareJson" disabled>共有で送る</button>
         <button id="downloadJson" disabled>JSONダウンロード</button>
         <button id="loadJson">JSON読込</button>
         <input type="file" id="jsonFile" accept="application/json" style="display:none" />
         <button id="copySummary" disabled>集計コピー</button>
         <button id="toggleMirror">鏡像表示ON</button>
+        <button id="flipCamera" disabled>前面カメラ</button>
       </div>
     </div>
   </footer>
@@ -442,6 +447,8 @@ const SIGNS = [
   { id: "tori", jp: "酉", romaji: "tori" },
   { id: "inu", jp: "戌", romaji: "inu" },
   { id: "i", jp: "亥", romaji: "i" },
+  // 壬は十二支ではなく十干（みずのえ）。水遁・水龍弾の術で使う
+  { id: "mizunoe", jp: "壬", romaji: "mizunoe" },
   { id: "transition", jp: "遷移", romaji: "transition" }
 ];
 
@@ -455,6 +462,7 @@ const state = {
   samples: [],
   busy: false,
   mirror: true,
+  facingMode: "user",       // スマホの前面/背面。既定は自分の手が見える前面
   classifierK: 5,
   roi: {
     cx: 0.5,
@@ -492,6 +500,9 @@ const els = {
   transition10: document.getElementById("transition10"),
   transition20: document.getElementById("transition20"),
   downloadJson: document.getElementById("downloadJson"),
+  shareJson: document.getElementById("shareJson"),
+  flipCamera: document.getElementById("flipCamera"),
+  camInfo: document.getElementById("camInfo"),
   loadJson: document.getElementById("loadJson"),
   jsonFile: document.getElementById("jsonFile"),
   copySummary: document.getElementById("copySummary"),
@@ -518,6 +529,7 @@ function setBusy(busy) {
   els.transition20.disabled = busy || !hasCamera;
   els.downloadCsv.disabled = busy || state.samples.length === 0;
   els.downloadJson.disabled = busy || state.samples.length === 0;
+  els.shareJson.disabled = busy || state.samples.length === 0;
   els.clearSamples.disabled = busy || state.samples.length === 0;
   els.copySummary.disabled = busy || state.samples.length === 0;
   [...els.labelButtons.querySelectorAll("button")].forEach(b => b.disabled = busy);
@@ -584,6 +596,25 @@ function timestamp() {
   return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 }
 
+// 実際に届いている映像の素性を出す。端末ごとに解像度も向きも違うので、
+// 撮ったデータがどの条件のものかを確認できるようにしておく。
+function reportCamera() {
+  const v = els.video;
+  if (!v || !v.videoWidth) { els.camInfo.textContent = "カメラ: ---"; return; }
+  const a = v.videoWidth / v.videoHeight;
+  els.camInfo.textContent = `カメラ: ${v.videoWidth}×${v.videoHeight}（比 ${a.toFixed(3)} / ${state.facingMode === "user" ? "前面" : "背面"}）`;
+}
+
+async function flipCamera() {
+  state.facingMode = state.facingMode === "user" ? "environment" : "user";
+  if (state.camera) {
+    try { await state.camera.stop(); } catch (e) { /* 停止できなくても続行 */ }
+    state.camera = null;
+  }
+  els.flipCamera.textContent = state.facingMode === "user" ? "前面カメラ" : "背面カメラ";
+  await startCamera();
+}
+
 async function startCamera() {
   setBusy(true);
   setStatus("MediaPipe Handsを読み込んでいます...");
@@ -601,14 +632,19 @@ async function startCamera() {
 
     state.hands.onResults(onResults);
 
+    // スマホは前面/背面があるので明示的に指定する。既定は自分の手が見える前面。
     state.camera = new Camera(els.video, {
       onFrame: async () => {
         await state.hands.send({ image: els.video });
       },
       width: 1280,
-      height: 960
+      height: 960,
+      facingMode: state.facingMode
     });
     await state.camera.start();
+    reportCamera();
+    els.video.addEventListener("loadedmetadata", reportCamera);
+    els.flipCamera.disabled = false;
     setStatus("準備完了。ラベルを選んで3秒後連続記録を押してください");
   } catch (e) {
     console.error(e);
@@ -992,6 +1028,28 @@ function csvCell(v) {
   return s;
 }
 
+// スマホで撮ったデータをPCへ移すための出口。
+// ダウンロードだと端末のファイル領域に落ちるだけで移送が面倒なので、
+// OSの共有シート（AirDrop・メール・クラウド等）に流せるようにする。
+async function shareJson() {
+  if (!state.samples.length) { setStatus("保存したサンプルがありません"); return; }
+  const name = `naruto_12sign_mediapipe_samples_${timestamp()}.json`;
+  const text = JSON.stringify(buildPayload(), null, 2);
+  try {
+    const file = new File([text], name, { type: "application/json" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: name });
+      setStatus("共有しました");
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === "AbortError") { setStatus("共有をキャンセルしました"); return; }
+  }
+  // 共有に対応していない環境ではダウンロードに落とす
+  download(name, text, "application/json");
+  setStatus("この端末は共有に非対応のためダウンロードしました");
+}
+
 function download(filename, text, type = "text/plain") {
   const blob = new Blob([text], {type});
   const url = URL.createObjectURL(blob);
@@ -1008,15 +1066,19 @@ function downloadCsv() {
   download(`naruto_12sign_mediapipe_features_${timestamp()}.csv`, toCsv(), "text/csv");
 }
 
-function downloadJson() {
-  const payload = {
+function buildPayload() {
+  return {
     app: "naruto_12sign_mediapipe_tester",
     version: 1,
     exportedAt: new Date().toISOString(),
     signs: SIGNS,
     samples: state.samples
   };
-  download(`naruto_12sign_mediapipe_samples_${timestamp()}.json`, JSON.stringify(payload, null, 2), "application/json");
+}
+
+function downloadJson() {
+  download(`naruto_12sign_mediapipe_samples_${timestamp()}.json`,
+    JSON.stringify(buildPayload(), null, 2), "application/json");
 }
 
 function clearSamples() {
@@ -1129,6 +1191,8 @@ els.transition10.addEventListener("click", () => burst("transition", 10));
 els.transition20.addEventListener("click", () => burst("transition", 20));
 els.downloadCsv.addEventListener("click", downloadCsv);
 els.downloadJson.addEventListener("click", downloadJson);
+els.shareJson.addEventListener("click", shareJson);
+els.flipCamera.addEventListener("click", flipCamera);
 els.clearSamples.addEventListener("click", clearSamples);
 els.loadJson.addEventListener("click", () => els.jsonFile.click());
 els.jsonFile.addEventListener("change", e => {

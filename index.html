@@ -118,8 +118,10 @@
     .cameraBox {
       position: relative;
       overflow: hidden;
-      min-height: 420px;
-      aspect-ratio: 16 / 10;
+      /* min-height と aspect-ratio を併記すると、高さが優先されて幅がはみ出す。
+         幅を基準にして高さを決める。スマホは縦持ちなので縦長の枠にする。 */
+      width: 100%;
+      aspect-ratio: 3 / 4;
       background: #020304;
       border: 1px solid rgba(255,255,255,.12);
       border-radius: 8px;
@@ -610,7 +612,6 @@
       .cameraBox {
         width: 100%;
         min-width: 0;
-        min-height: 320px;
       }
     }
     @media (max-width: 560px) {
@@ -748,6 +749,10 @@
       font-size: 11px;
       line-height: 1.8;
       opacity: .42;
+    }
+    /* デスクトップは横長に戻す。基本ルールより後ろに置くこと（順序で勝敗が決まる） */
+    @media (min-width: 900px) {
+      .cameraBox { aspect-ratio: 16 / 10; }
     }
   </style>
 </head>
@@ -966,6 +971,8 @@ const SIGN_DEFS = [
   { id: "tori", jp: "酉", romaji: "tori", jutsu: "風切り" },
   { id: "inu", jp: "戌", romaji: "inu", jutsu: "防御結界" },
   { id: "i", jp: "亥", romaji: "i", jutsu: "回復補助" },
+  // 壬は十二支ではなく十干（みずのえ）。水遁・水龍弾の術で使われるため13番目として足した。
+  { id: "mizunoe", jp: "壬", romaji: "mizunoe", jutsu: "水気集中" },
   { id: "transition", jp: "遷移", romaji: "transition", jutsu: "補助クラス" },
   { id: "none", jp: "印以外", romaji: "none", jutsu: "棄却クラス" }
 ];

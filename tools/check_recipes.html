@@ -62,7 +62,9 @@
 // 12印。ここに無い印がレシピに出てきたらデータ側の誤りとして検出する。
 const SIGN_JP = {
   ne: "子", ushi: "丑", tora: "寅", u: "卯", tatsu: "辰", mi: "巳",
-  uma: "午", hitsuji: "未", saru: "申", tori: "酉", inu: "戌", i: "亥"
+  uma: "午", hitsuji: "未", saru: "申", tori: "酉", inu: "戌", i: "亥",
+  // 壬は十干（みずのえ）。十二支ではないが水遁・水龍弾の術で使う
+  mizunoe: "壬"
 };
 
 // 実測で誤認しやすかった組（leave-one-out k-NNの混同行列より）。
@@ -73,7 +75,7 @@ const esc = t => String(t).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;"
 const jp = id => SIGN_JP[id] || `?${id}?`;
 const chain = signs => signs.map(jp).join("→");
 
-function check() {
+function check(trainCounts) {
   const R = window.JUTSU_RECIPES || [];
   const issues = [];   // 直さないと壊れるもの
   const warns = [];    // 気に留めておくもの
@@ -140,7 +142,22 @@ function check() {
     }
   }
 
-  // 7) 印の使用頻度（撮り直しの優先度になる）
+  // 7) レシピが使う印の学習データがあるか。無ければその術は永久に成立しない
+  if (trainCounts) {
+    const MIN = 30;
+    for (const r of R) {
+      const missing = [...new Set(r.signs)].filter(x => !trainCounts[x]);
+      const thin = [...new Set(r.signs)].filter(x => trainCounts[x] && trainCounts[x] < MIN);
+      if (missing.length) {
+        issues.push(`<b>${esc(r.name)}</b> は ${missing.map(x=>`<span class="jp">${jp(x)}</span>`).join(" ")} を使いますが、学習データが1枚もありません。この術は発動できません`);
+      }
+      if (thin.length) {
+        warns.push(`<b>${esc(r.name)}</b> が使う ${thin.map(x=>`<span class="jp">${jp(x)}</span>(${trainCounts[x]}枚)</span>`).join(" ")} は学習データが${MIN}枚未満です。認識が不安定かもしれません`);
+      }
+    }
+  }
+
+  // 8) 印の使用頻度（撮り直しの優先度になる）
   const use = {};
   Object.keys(SIGN_JP).forEach(s => use[s] = 0);
   R.forEach(r => r.signs.forEach(s => { if (s in use) use[s]++; }));
@@ -180,12 +197,15 @@ function check() {
   }
   html += `</table>`;
 
-  // 印の使用頻度
-  html += `<h2>印の使用頻度</h2><table><tr><th>印</th><th>使われている術の数</th></tr>`;
+  // 印の使用頻度と学習データの枚数
+  html += `<h2>印ごとの状況</h2><table><tr><th>印</th><th>使われている術</th><th>学習データ</th></tr>`;
   for (const s of Object.keys(use).sort((a, b) => use[b] - use[a])) {
+    const n = trainCounts ? (trainCounts[s] || 0) : null;
+    const warn = trainCounts && n === 0;
     html += `<tr>
       <td class="jp">${jp(s)} <span class="muted" style="font-size:11px">${s}</span></td>
       <td><span class="bar" style="width:${use[s] * 12}px"></span> ${use[s]}</td>
+      <td class="${warn ? "" : "muted"}" ${warn ? 'style="color:var(--ng)"' : ""}>${n === null ? "?" : n + "枚"}${warn ? " ← 未収集" : ""}</td>
     </tr>`;
   }
   html += `</table>`;
@@ -199,7 +219,17 @@ if (!window.JUTSU_RECIPES) {
      <p class="muted">HTTPサーバ経由で開いてください（ファイルを直接開くと読めません）。<br>
      <code>python -m http.server 8134</code> して <code>http://localhost:8134/tools/check_recipes.html</code></p>`;
 } else {
-  check();
+  // 学習データの枚数も一緒に見る。レシピで使う印が撮られていなければ
+  // その術は永久に成立しないので、それを検出できるようにする。
+  fetch("../data/signs.json")
+    .then(r => r.ok ? r.json() : null)
+    .then(d => {
+      if (!d || !d.samples) { check(null); return; }
+      const counts = {};
+      for (const s of d.samples) counts[s.label] = (counts[s.label] || 0) + 1;
+      check(counts);
+    })
+    .catch(() => check(null));
 }
 </script>
 </body>

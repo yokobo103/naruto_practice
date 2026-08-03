@@ -807,6 +807,50 @@
     .sChip.guide.on b { font-weight: 700; }
     .sChip.guide.next { background: #5bc8ff; color: #10131c; }
     .sChip.guide.next b { font-weight: 700; }
+    /* 練習モード: 次の印を大きく案内する */
+    body.mode-guide .recipePanel,
+    body.mode-guide .liveNote { display: none; }
+    body.mode-free .guidePanel,
+    body.mode-direct .guidePanel { display: none; }
+    body.mode-free .liveNote { display: none; }
+    body.mode-free.hideRecipes .recipePanel { display: none; }
+    body.mode-free.hideRecipes .liveNote { display: block; }
+    body.mode-direct .recipePanel,
+    body.mode-direct .liveNote { display: none; }
+
+    .guidePick {
+      width: 100%; font: inherit; padding: 9px 10px; border-radius: 8px;
+      background: #131824; color: var(--text); border: 1px solid rgba(255,255,255,.16);
+      margin-bottom: 12px;
+    }
+    .guideNext {
+      display: grid; justify-items: center; gap: 6px;
+      padding: 16px 12px; border-radius: 10px;
+      background: rgba(91,200,255,.08); border: 1px solid rgba(91,200,255,.28);
+      margin-bottom: 12px;
+    }
+    .guideNext .lead { font-size: 13px; opacity: .8; }
+    .guideNext img {
+      width: 132px; height: 132px; border-radius: 10px; object-fit: cover;
+      box-shadow: 0 6px 20px rgba(0,0,0,.35);
+    }
+    .guideNext .kanji { font-family: var(--brush); font-size: 46px; line-height: 1.1; }
+    .guideNext .romaji { font-size: 12px; opacity: .6; letter-spacing: .08em; }
+    .guideNext .count { font-size: 12px; opacity: .65; font-variant-numeric: tabular-nums; }
+    .guideNext.done { background: rgba(110,231,160,.10); border-color: rgba(110,231,160,.35); }
+    .guideNext.wrong { animation: wrongShake .3s ease; }
+    @keyframes wrongShake {
+      0%,100% { transform: translateX(0); }
+      25% { transform: translateX(-6px); }
+      75% { transform: translateX(6px); }
+    }
+    .guideSteps { display: flex; flex-wrap: wrap; gap: 5px; }
+    .guideSteps .gs {
+      font-family: var(--brush); font-size: 17px;
+      padding: 2px 8px; border-radius: 5px; background: rgba(255,255,255,.06);
+    }
+    .guideSteps .gs.done { background: #ffd166; color: #10131c; font-weight: 700; }
+    .guideSteps .gs.now { background: #5bc8ff; color: #10131c; font-weight: 700; }
   </style>
 </head>
 <body>
@@ -820,11 +864,8 @@
       <div class="topControls">
         <div class="segmented modeSwitch">
           <button id="practiceMode" class="active">練習</button>
-          <button id="liveMode">本番</button>
+          <button id="liveMode">実践</button>
           <button id="directMode">印だけ</button>
-        </div>
-        <div class="segmented modeSwitch">
-          <button id="toggleGuide">お手本 OFF</button>
         </div>
         <button id="startCamera" class="primary">カメラ開始</button>
       </div>
@@ -867,6 +908,14 @@
     </section>
 
     <aside class="side">
+      <!-- 練習モード: 術を1つ選んで、次に結ぶ印を1つずつ案内する -->
+      <section class="panel guidePanel" id="guidePanel">
+        <h2>練習する術</h2>
+        <select id="guidePick" class="guidePick"></select>
+        <div id="guideNext" class="guideNext"></div>
+        <div id="guideSteps" class="guideSteps"></div>
+      </section>
+
       <!-- 右カラムは術レシピ専用。設定や数値は下の折りたたみに追い出した -->
       <section class="panel recipePanel" id="recipePanel">
         <h2>待ち受け中の術 <span class="hint" id="recipeHint"></span></h2>
@@ -1136,11 +1185,14 @@ const state = {
   lastConfirmAt: 0,
   lastKnnDist: Infinity,
   blockReason: "---",
-  mode: "sequence",
+  mode: "guide",
   sequenceIndex: 0,
   signHistory: [],          // 転換2: 確定した印の並び。全レシピをここに末尾一致させる
-  showRecipes: true,        // 練習モード=true / 本番モード=false
-  showGuide: false,         // 初心者向けに印のお手本写真を出すか
+  showRecipes: true,        // 実践モードでレシピ一覧を出すか
+  showGuide: false,         // 印にお手本写真を添えるか（練習モードでは自動でON）
+  guideId: null,            // 練習モードで選んでいる術
+  guideIndex: 0,            // その術の何印目まで結べたか
+  guideWrong: null,         // 直前に違う印を結んだときの表示用
   centerTimer: 0,
   sequenceStartedAt: 0,
   roi: {
@@ -1198,7 +1250,10 @@ const els = {
   practiceMode: document.getElementById("practiceMode"),
   liveMode: document.getElementById("liveMode"),
   recipeHint: document.getElementById("recipeHint"),
-  toggleGuide: document.getElementById("toggleGuide"),
+  guidePanel: document.getElementById("guidePanel"),
+  guidePick: document.getElementById("guidePick"),
+  guideNext: document.getElementById("guideNext"),
+  guideSteps: document.getElementById("guideSteps"),
   firedLog: document.getElementById("firedLog"),
   kSelect: document.getElementById("kSelect"),
   windowInput: document.getElementById("windowInput"),
@@ -1940,7 +1995,9 @@ function maybeConfirm(candidate, motion, known) {
   triggerConfirm(candidate.label);
   state.frameHistory = [];                         // 次の印を前の印に引きずらせない
 
-  if (state.mode === "sequence") {
+  if (state.mode === "guide") {
+    advanceGuide(candidate.label);
+  } else if (state.mode === "free") {
     advanceSequenceIfNeeded(candidate.label);
   } else {
     triggerDirectJutsu(candidate.label);
@@ -2114,33 +2171,109 @@ function renderSequence() {
     : "印を結んでください（順番の縛りなし）";
 }
 
+// モードは3つ。
+//   guide  練習   … 術を1つ選び、次に結ぶ印を写真つきで1つずつ案内する
+//   free   実践   … 全レシピを同時待ち受け。案内も写真も出さない
+//   direct 印だけ … 認識した印をその場で出す（調整用）
 function setMode(mode) {
   state.mode = mode;
   state.sequenceIndex = 0;
   state.signHistory = [];
-  state.sequenceStartedAt = mode === "sequence" ? performance.now() : 0;
+  state.guideIndex = 0;
+  state.guideWrong = null;
+  state.sequenceStartedAt = mode === "free" ? performance.now() : 0;
   state.frameHistory = [];
   state.stable = null;
+  state.showGuide = mode === "guide";   // 写真は練習モードだけ
   resetHold();
-  const live = mode === "sequence" && !state.showRecipes;
-  document.body.classList.toggle("live", live);
+
+  document.body.classList.remove("mode-guide", "mode-free", "mode-direct");
+  document.body.classList.add(`mode-${mode}`);
+  document.body.classList.toggle("hideRecipes", mode === "free" && !state.showRecipes);
+
+  els.practiceMode.classList.toggle("active", mode === "guide");
+  els.liveMode.classList.toggle("active", mode === "free");
   els.directMode.classList.toggle("active", mode === "direct");
-  els.practiceMode.classList.toggle("active", mode === "sequence" && state.showRecipes);
-  els.liveMode.classList.toggle("active", live);
   els.recipeHint.textContent = `${JUTSU_RECIPES.length}種`;
-  if (mode !== "sequence") els.firedLog.innerHTML = "";
-  els.modeBadge.textContent = mode === "direct" ? "印だけ" : (state.showRecipes ? "練習" : "本番");
-  setStatus(mode === "direct"
-    ? "印だけモード: 認識した印をその場で表示します。"
-    : (state.showRecipes
-        ? `練習モード: ${JUTSU_RECIPES.length}種のレシピを見ながら結べます。`
-        : "本番モード: レシピは伏せています。覚えた術を結んでください。"));
+  if (mode !== "free") els.firedLog.innerHTML = "";
+
+  els.modeBadge.textContent = mode === "guide" ? "練習" : mode === "free" ? "実践" : "印だけ";
+  setStatus(
+    mode === "guide" ? "練習モード: 術を選ぶと、次に結ぶ印を1つずつ案内します。" :
+    mode === "free"  ? `実践モード: ${JUTSU_RECIPES.length}種を同時待ち受け。好きな印から結んでください。` :
+                       "印だけモード: 認識した印をその場で表示します。");
+
+  if (mode === "guide") { buildGuidePicker(); renderGuide(); }
   renderSequence();
   updateSequenceTimer();
 }
 
 // 転換2の中心。期待している印と違ってもリセットしない。
 // 印を履歴に積んで、成立した術があれば撃つ。何も成立しなければ次の印を待つだけ。
+// 練習モード: 選んだ術の「次に結ぶ印」だけを待つ。
+// 違う印を結んでもリセットしない（初心者が最初からやり直しになるのは酷なので）。
+function advanceGuide(label) {
+  const r = guideRecipe();
+  if (!r) return;
+  const expected = r.signs[state.guideIndex];
+  if (label !== expected) {
+    state.guideWrong = label;
+    addLog(`GUIDE ちがう印: ${signDef(label).jp}（待っているのは ${signDef(expected).jp}）`);
+    renderGuide();
+    setTimeout(() => { state.guideWrong = null; renderGuide(); }, 900);
+    return;
+  }
+  state.guideWrong = null;
+  state.guideIndex++;
+  addLog(`GUIDE ${state.guideIndex}/${r.signs.length}: ${signDef(label).jp}`);
+  if (state.guideIndex >= r.signs.length) {
+    fireJutsu(r);
+    setTimeout(() => { state.guideIndex = 0; renderGuide(); }, 2600);
+  }
+  renderGuide();
+}
+
+function guideRecipe() {
+  return JUTSU_RECIPES.find(r => r.id === state.guideId) || null;
+}
+
+function renderGuide() {
+  const r = guideRecipe();
+  if (!r) { els.guideNext.innerHTML = ""; els.guideSteps.innerHTML = ""; return; }
+  const total = r.signs.length;
+  const i = state.guideIndex;
+
+  if (i >= total) {
+    els.guideNext.className = "guideNext done";
+    els.guideNext.innerHTML = `<div class="lead">できました</div>
+      <div class="kanji">${escapeHtml(r.name)}</div>
+      <div class="count">${total}/${total} 印</div>`;
+  } else {
+    const sd = signDef(r.signs[i]);
+    const wrong = state.guideWrong;
+    els.guideNext.className = "guideNext" + (wrong ? " wrong" : "");
+    els.guideNext.innerHTML = `
+      <div class="lead">${wrong
+        ? `それは <b>${signDef(wrong).jp}</b> です。次は…`
+        : (i === 0 ? "まずは この印から" : "次は この印だよ")}</div>
+      <img src="./assets/signs/${sd.id}.jpg" alt="${sd.jp}" onerror="this.style.display='none'">
+      <div class="kanji">${sd.jp}</div>
+      <div class="romaji">${sd.romaji}</div>
+      <div class="count">${i}/${total} 印まで完了</div>`;
+  }
+
+  els.guideSteps.innerHTML = r.signs.map((id, n) =>
+    `<span class="gs ${n < i ? "done" : n === i ? "now" : ""}">${signDef(id).jp}</span>`).join("");
+}
+
+function buildGuidePicker() {
+  els.guidePick.innerHTML = JUTSU_RECIPES
+    .slice().sort((a, b) => a.signs.length - b.signs.length)
+    .map(r => `<option value="${r.id}">${escapeHtml(r.name)}（${r.signs.length}印）</option>`).join("");
+  if (!state.guideId) state.guideId = els.guidePick.value;
+  els.guidePick.value = state.guideId;
+}
+
 function advanceSequenceIfNeeded(label) {
   const now = performance.now();
   state.signHistory.push({ label, at: now });
@@ -2151,7 +2284,7 @@ function advanceSequenceIfNeeded(label) {
   if (hit) {
     addLog(`JUTSU ${hit.name} [${hit.signs.join("→")}]`);
     fireJutsu(hit);
-    if (!state.showRecipes) {
+    if (state.mode === "free" && !state.showRecipes) {
       const st = ELEMENT_STYLE[hit.element] || ELEMENT_STYLE.neutral;
       const row = document.createElement("div");
       row.className = "fired";
@@ -2185,7 +2318,7 @@ function expireSignHistory() {
 
 // 「あと何秒で履歴が消えるか」を出す。切れるのは最後に結んだ印からの経過時間。
 function updateSequenceTimer() {
-  if (state.mode !== "sequence") {
+  if (state.mode !== "free") {
     els.timerFill.parentElement.classList.remove("on");
     els.timerFill.style.width = "100%";
     return;
@@ -2439,13 +2572,13 @@ function bindControls() {
     renderDebug();
   });
   els.directMode.addEventListener("click", () => setMode("direct"));
-  els.practiceMode.addEventListener("click", () => { state.showRecipes = true; setMode("sequence"); });
-  els.liveMode.addEventListener("click", () => { state.showRecipes = false; setMode("sequence"); });
-  els.toggleGuide.addEventListener("click", () => {
-    state.showGuide = !state.showGuide;
-    els.toggleGuide.textContent = state.showGuide ? "お手本 ON" : "お手本 OFF";
-    els.toggleGuide.classList.toggle("active", state.showGuide);
-    renderSequence();
+  els.practiceMode.addEventListener("click", () => setMode("guide"));
+  els.liveMode.addEventListener("click", () => setMode("free"));
+  els.guidePick.addEventListener("change", () => {
+    state.guideId = els.guidePick.value;
+    state.guideIndex = 0;
+    state.guideWrong = null;
+    renderGuide();
   });
   els.kSelect.addEventListener("change", () => {
     state.classifierK = Number(els.kSelect.value);
@@ -2564,7 +2697,7 @@ function bindRoiDrag() {
 
 function init() {
   bindControls();
-  setMode("sequence");   // 起動時は練習モード
+  setMode("guide");   // 起動時は練習モード
   renderSequence();
   renderSampleCounts();
   renderTopCandidates([]);

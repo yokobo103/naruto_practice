@@ -788,6 +788,25 @@
       22%  { opacity: .95; }
       100% { opacity: 0; transform: translate(var(--dx), -70px) scale(var(--s)); }
     }
+    /* 初心者モード: 印に写真のお手本を添える */
+    .sChip.guide {
+      display: inline-grid;
+      justify-items: center;
+      gap: 2px;
+      padding: 3px;
+      background: rgba(255,255,255,.05);
+    }
+    .sChip.guide img {
+      width: 46px; height: 46px;
+      border-radius: 5px;
+      display: block;
+      object-fit: cover;
+    }
+    .sChip.guide b { font-weight: 400; font-size: 15px; line-height: 1; }
+    .sChip.guide.on { background: #ffd166; color: #10131c; }
+    .sChip.guide.on b { font-weight: 700; }
+    .sChip.guide.next { background: #5bc8ff; color: #10131c; }
+    .sChip.guide.next b { font-weight: 700; }
   </style>
 </head>
 <body>
@@ -803,6 +822,9 @@
           <button id="practiceMode" class="active">練習</button>
           <button id="liveMode">本番</button>
           <button id="directMode">印だけ</button>
+        </div>
+        <div class="segmented modeSwitch">
+          <button id="toggleGuide">お手本 OFF</button>
         </div>
         <button id="startCamera" class="primary">カメラ開始</button>
       </div>
@@ -1118,6 +1140,7 @@ const state = {
   sequenceIndex: 0,
   signHistory: [],          // 転換2: 確定した印の並び。全レシピをここに末尾一致させる
   showRecipes: true,        // 練習モード=true / 本番モード=false
+  showGuide: false,         // 初心者向けに印のお手本写真を出すか
   centerTimer: 0,
   sequenceStartedAt: 0,
   roi: {
@@ -1175,6 +1198,7 @@ const els = {
   practiceMode: document.getElementById("practiceMode"),
   liveMode: document.getElementById("liveMode"),
   recipeHint: document.getElementById("recipeHint"),
+  toggleGuide: document.getElementById("toggleGuide"),
   firedLog: document.getElementById("firedLog"),
   kSelect: document.getElementById("kSelect"),
   windowInput: document.getElementById("windowInput"),
@@ -1994,6 +2018,17 @@ function triggerDirectJutsu(label) {
   els.jutsuText.classList.add("active");
 }
 
+// 印のチップ。お手本モードでは写真を添える。
+// 写真は dataset/ の自前の撮影から tools/make_sign_images.html で切り出したもの。
+function chip(id, extra) {
+  const jp = signDef(id).jp;
+  if (!state.showGuide) return `<span class="sChip ${extra}">${jp}</span>`;
+  return `<span class="sChip guide ${extra}">
+    <img src="./assets/signs/${id}.jpg" alt="${jp}" loading="lazy"
+         onerror="this.style.display='none'">
+    <b>${jp}</b></span>`;
+}
+
 function renderSequence() {
   // 結んだ印の履歴（これが術のレシピと照合される本体）
   els.sequenceSteps.innerHTML = "";
@@ -2053,7 +2088,7 @@ function renderSequence() {
     let body;
     if (r.signs.length > LONG) {
       const next = r.signs.slice(p.matched, p.matched + 5)
-        .map((id, i) => `<span class="sChip${i === 0 ? " next" : ""}">${signDef(id).jp}</span>`).join("");
+        .map((id, i) => chip(id, i === 0 ? "next" : "")).join("");
       body = `
         <div class="rProgress"><div style="width:${Math.round(p.matched / r.signs.length * 100)}%"></div></div>
         <div class="rSigns">
@@ -2061,8 +2096,7 @@ function renderSequence() {
           ${p.matched + 5 < r.signs.length ? '<span class="sChip dim">…</span>' : ""}
         </div>`;
     } else {
-      const chips = r.signs.map((id, i) =>
-        `<span class="sChip${i < p.matched ? " on" : ""}">${signDef(id).jp}</span>`).join("");
+      const chips = r.signs.map((id, i) => chip(id, i < p.matched ? "on" : "")).join("");
       body = `<div class="rSigns">${chips}</div>`;
     }
     row.innerHTML = `
@@ -2407,6 +2441,12 @@ function bindControls() {
   els.directMode.addEventListener("click", () => setMode("direct"));
   els.practiceMode.addEventListener("click", () => { state.showRecipes = true; setMode("sequence"); });
   els.liveMode.addEventListener("click", () => { state.showRecipes = false; setMode("sequence"); });
+  els.toggleGuide.addEventListener("click", () => {
+    state.showGuide = !state.showGuide;
+    els.toggleGuide.textContent = state.showGuide ? "お手本 ON" : "お手本 OFF";
+    els.toggleGuide.classList.toggle("active", state.showGuide);
+    renderSequence();
+  });
   els.kSelect.addEventListener("change", () => {
     state.classifierK = Number(els.kSelect.value);
   });

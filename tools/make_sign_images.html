@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>印のお手本画像を作る — NARUTO印センサー</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; padding:24px 28px 60px; background:#0b0e14; color:#e8edf6;
+         font-family: system-ui,-apple-system,"Segoe UI",sans-serif; line-height:1.6; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .lead { font-size:13px; opacity:.6; margin:0 0 18px; }
+  button { font:inherit; min-height:40px; padding:8px 16px; border-radius:8px;
+           border:1px solid rgba(255,255,255,.16); background:#1a2030; color:#e8edf6;
+           font-weight:600; cursor:pointer; }
+  button.primary { background:#5bc8ff; color:#08121c; border-color:#5bc8ff; }
+  button:disabled { opacity:.5; cursor:default; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
+  .card { border:1px solid rgba(255,255,255,.12); border-radius:10px; padding:10px;
+          background:rgba(255,255,255,.03); text-align:center; }
+  .card canvas { width:100%; height:auto; border-radius:6px; background:#000; display:block; }
+  .card .jp { font-size:20px; margin-top:6px; }
+  .card .meta { font-size:11px; opacity:.55; }
+  .card.ng { border-color:#ff6b6b; }
+  #status { font-size:13px; opacity:.75; margin-bottom:14px; min-height:20px; }
+</style>
+</head>
+<body>
+<h1>印のお手本画像を作る</h1>
+<p class="lead">
+  <code>dataset/</code> の写真から手の部分だけを切り出して、初心者モードで出す小さなお手本を作ります。<br>
+  MediaPipeで両手を検出し、その範囲を正方形で切り抜いて、手の形が分かりやすくなるよう補正します。<br>
+  写真はよこぼ自身が撮ったものなので、公開しても権利上の問題はありません。
+</p>
+
+<div class="row">
+  <button class="primary" id="run">作る</button>
+  <button id="save" disabled>全部ダウンロード</button>
+  <label style="font-size:13px;opacity:.7">
+    元画像
+    <select id="src">
+      <option value="12in_cropped">dataset/12in_cropped（12印）</option>
+      <option value="dataset_12sign_cropped">dataset/dataset_12sign_cropped</option>
+    </select>
+  </label>
+</div>
+<div id="status">「作る」を押してください。</div>
+<div class="grid" id="grid"></div>
+
+<script>
+// 出力する印。壬は写真がまだ無いので、撮ったらここに足す。
+const SIGNS = [
+  { id:"ne", jp:"子" }, { id:"ushi", jp:"丑" }, { id:"tora", jp:"寅" }, { id:"u", jp:"卯" },
+  { id:"tatsu", jp:"辰" }, { id:"mi", jp:"巳" }, { id:"uma", jp:"午" }, { id:"hitsuji", jp:"未" },
+  { id:"saru", jp:"申" }, { id:"tori", jp:"酉" }, { id:"inu", jp:"戌" }, { id:"i", jp:"亥" },
+  { id:"mizunoe", jp:"壬" }
+];
+
+const OUT = 192;        // 出力の一辺
+const CANDIDATES = 8;   // 各印で試す枚数。両手が写っている中から一番良いものを選ぶ
+const PAD = 0.28;       // 手のまわりの余白（範囲に対する割合）
+// 巳や辰のように両手が重なる印では片手しか検出されないことがあり、
+// その手だけを囲むともう片方が切れてしまう。切り抜きの下限を決めておく。
+const MIN_SIZE = 0.52;
+
+const els = {
+  run: document.getElementById("run"),
+  save: document.getElementById("save"),
+  src: document.getElementById("src"),
+  grid: document.getElementById("grid"),
+  status: document.getElementById("status")
+};
+
+let hands = null;
+const results = {};   // id -> { canvas, hands, score }
+
+function setStatus(t) { els.status.textContent = t; }
+
+function initHands() {
+  if (hands) return hands;
+  hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+  hands.setOptions({ maxNumHands: 2, modelComplexity: 1,
+    minDetectionConfidence: 0.3, minTrackingConfidence: 0.3, staticImageMode: true });
+  return hands;
+}
+
+function loadImage(url) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+function detect(img) {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve(null), 5000);
+    hands.onResults(r => { clearTimeout(timer); resolve(r); });
+    hands.send({ image: img }).catch(() => { clearTimeout(timer); resolve(null); });
+  });
+}
+
+// 両手を囲む正方形を出す
+function handsBox(res, w, h) {
+  const lms = res && res.multiHandLandmarks || [];
+  if (!lms.length) return null;
+  let x0 = 1, y0 = 1, x1 = 0, y1 = 0;
+  for (const hand of lms) for (const p of hand) {
+    x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x);
+    y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y);
+  }
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  let size = Math.max(x1 - x0, y1 - y0) * (1 + PAD * 2);
+  size = Math.min(Math.max(size, MIN_SIZE), 1);
+  // 枠が画像からはみ出さないよう中心を寄せる
+  const half = size / 2;
+  const ccx = Math.min(Math.max(cx, half), 1 - half);
+  const ccy = Math.min(Math.max(cy, half), 1 - half);
+  return { x: (ccx - half) * w, y: (ccy - half) * h, s: size * Math.min(w, h),
+           count: lms.length };
+}
+
+// 手の形が読み取りやすくなるよう軽く補正する。
+// 肌色と影の差が小さいので、コントラストと彩度を少し上げる。
+function enhance(ctx, size) {
+  const d = ctx.getImageData(0, 0, size, size);
+  const a = d.data;
+  const C = 1.25, B = 6, S = 1.15;
+  for (let i = 0; i < a.length; i += 4) {
+    let r = a[i], g = a[i+1], b = a[i+2];
+    const lum = 0.299*r + 0.587*g + 0.114*b;
+    r = lum + (r - lum) * S; g = lum + (g - lum) * S; b = lum + (b - lum) * S;
+    a[i]   = Math.max(0, Math.min(255, (r - 128) * C + 128 + B));
+    a[i+1] = Math.max(0, Math.min(255, (g - 128) * C + 128 + B));
+    a[i+2] = Math.max(0, Math.min(255, (b - 128) * C + 128 + B));
+  }
+  ctx.putImageData(d, 0, 0);
+}
+
+async function buildOne(sign, folder) {
+  let best = null;
+  for (let n = 1; n <= CANDIDATES; n++) {
+    const url = `../dataset/${folder}/${sign.id}/${String(n).padStart(3, "0")}.jpg`;
+    const img = await loadImage(url);
+    if (!img) continue;
+    const res = await detect(img);
+    const box = handsBox(res, img.width, img.height);
+    if (!box) continue;
+    // 両手写っているものを優先し、同じなら手が大きく写っているもの
+    const score = box.count * 100 + box.s / Math.min(img.width, img.height) * 10;
+    if (!best || score > best.score) best = { img, box, score, count: box.count, n };
+    if (box.count === 2 && n >= 3) break;   // 十分良いものが出たら打ち切る
+  }
+  if (!best) return null;
+
+  const c = document.createElement("canvas");
+  c.width = OUT; c.height = OUT;
+  const ctx = c.getContext("2d");
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(best.img, best.box.x, best.box.y, best.box.s, best.box.s, 0, 0, OUT, OUT);
+  enhance(ctx, OUT);
+  return { canvas: c, count: best.count, from: best.n };
+}
+
+async function run() {
+  els.run.disabled = true; els.save.disabled = true;
+  els.grid.innerHTML = "";
+  const folder = els.src.value;
+  setStatus("MediaPipeを読み込んでいます...");
+  initHands();
+  for (const sign of SIGNS) {
+    setStatus(`${sign.jp} を処理中...`);
+    const r = await buildOne(sign, folder);
+    const card = document.createElement("div");
+    card.className = "card" + (r ? "" : " ng");
+    if (r) {
+      results[sign.id] = r;
+      card.appendChild(r.canvas);
+      card.insertAdjacentHTML("beforeend",
+        `<div class="jp">${sign.jp}</div><div class="meta">${sign.id} / ${r.count}手 / ${String(r.from).padStart(3,"0")}.jpg</div>`);
+    } else {
+      card.insertAdjacentHTML("beforeend",
+        `<div style="height:100px;display:grid;place-items:center;opacity:.5">写真なし</div>
+         <div class="jp">${sign.jp}</div><div class="meta">${sign.id}</div>`);
+    }
+    els.grid.appendChild(card);
+  }
+  const n = Object.keys(results).length;
+  setStatus(`${n}/${SIGNS.length} 枚できました。${n < SIGNS.length ? "足りない印は写真を撮ってから作り直してください。" : ""}`);
+  els.run.disabled = false;
+  els.save.disabled = n === 0;
+}
+
+function save() {
+  for (const [id, r] of Object.entries(results)) {
+    r.canvas.toBlob(blob => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${id}.jpg`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }, "image/jpeg", 0.82);
+  }
+  setStatus("ダウンロードしました。assets/signs/ に置いてください。");
+}
+
+els.run.addEventListener("click", run);
+els.save.addEventListener("click", save);
+</script>
+</body>
+</html>

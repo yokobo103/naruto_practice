@@ -340,6 +340,44 @@
       .burstActions { grid-template-columns: repeat(6, minmax(0, 1fr)); }
       .counts { grid-template-columns: repeat(4, minmax(0, 1fr)); max-height: none; }
     }
+    /* ===== 撮影操作をカメラ直下に固定する ===== */
+    .camCol { display: grid; gap: 10px; min-width: 0; }
+    .captureBar { display: grid; gap: 8px; }
+    .shootRow { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+    .shootRow button:first-child { grid-column: 1 / -1; }
+
+    @media (max-width: 700px) {
+      /* カメラと撮影ボタンが同時に見えることを最優先にする。
+         映像を見ながらでないと、印を構えてから押せない。
+         そのためヘッダーは最小限まで削る。 */
+      header .sub { display: none; }
+      header h1 { font-size: 15px; }
+      .app > header { padding-bottom: 6px; }
+      .summary {
+        display: flex; overflow-x: auto; gap: 6px; padding-bottom: 2px;
+      }
+      .summary .metric {
+        flex: 0 0 auto; min-width: 76px; padding: 4px 8px;
+      }
+      .summary .metric span { font-size: 10px; }
+      .summary .metric strong { font-size: 14px; }
+      .cameraBox { aspect-ratio: auto; height: 34vh; }
+      /* 13個の印ボタンを縦に積むと画面を食うので、横スクロールの1列にする */
+      .labels {
+        display: flex; overflow-x: auto; gap: 6px;
+        padding-bottom: 4px; scroll-snap-type: x proximity;
+        -webkit-overflow-scrolling: touch;
+      }
+      .labels::-webkit-scrollbar { height: 4px; }
+      .labels::-webkit-scrollbar-thumb { background: rgba(255,255,255,.2); border-radius: 4px; }
+      .labelBtn {
+        flex: 0 0 auto; width: 62px; min-height: 46px;
+        scroll-snap-align: center; padding: 4px 2px; font-size: 13px;
+      }
+      .labelBtn.active { position: sticky; left: 0; right: 0; }
+      .shootRow { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .shootRow button { min-height: 48px; font-size: 14px; }
+    }
   </style>
 </head>
 <body>
@@ -363,6 +401,7 @@
 
   <main>
     <div class="workspace">
+      <div class="camCol">
       <section class="cameraBox">
         <video id="video" autoplay muted playsinline webkit-playsinline></video>
         <canvas id="canvas"></canvas>
@@ -375,6 +414,21 @@
           <div class="status" id="status">カメラ開始を押してください</div>
         </div>
       </section>
+
+      <!-- 撮影に必要なものはカメラの直下に置く。
+           スマホの1カラム表示でフッターに置くと、押すときに映像が画面外になる。 -->
+      <div class="captureBar">
+        <div class="tiny" id="camInfo">カメラ: ---</div>
+        <div class="labels" id="labelButtons"></div>
+        <div class="shootRow">
+          <button class="primary" id="startCamera">カメラ開始</button>
+          <button class="warm" id="burst20" disabled>3秒後 20連続</button>
+          <button class="warm" id="burst10" disabled>3秒後 10連続</button>
+          <button class="blue" id="singleSave" disabled>今の1枚</button>
+          <button id="flipCamera" disabled>前面カメラ</button>
+        </div>
+      </div>
+      </div>
 
       <aside class="side">
         <section class="panel">
@@ -406,28 +460,21 @@
 
   <footer class="controls">
     <div class="controlsInner">
-      <div class="tiny" id="camInfo">カメラ: ---</div>
-      <div class="labels" id="labelButtons"></div>
 
       <div class="burstActions">
-        <button class="primary" id="startCamera">カメラ開始</button>
-        <button class="warm" id="burst10" disabled>3秒後 10連続</button>
-        <button class="warm" id="burst20" disabled>3秒後 20連続</button>
-        <button class="blue" id="singleSave" disabled>今の1枚保存</button>
+        <button id="transition10" disabled>transition 10連続</button>
+        <button id="transition20" disabled>transition 20連続</button>
         <button id="downloadCsv" disabled>CSVダウンロード</button>
         <button class="danger" id="clearSamples" disabled>全サンプル削除</button>
       </div>
 
       <div class="actions">
-        <button id="transition10" disabled>transition 10連続</button>
-        <button id="transition20" disabled>transition 20連続</button>
         <button class="blue" id="shareJson" disabled>共有で送る</button>
         <button id="downloadJson" disabled>JSONダウンロード</button>
         <button id="loadJson">JSON読込</button>
         <input type="file" id="jsonFile" accept="application/json" style="display:none" />
         <button id="copySummary" disabled>集計コピー</button>
         <button id="toggleMirror">鏡像表示ON</button>
-        <button id="flipCamera" disabled>前面カメラ</button>
       </div>
     </div>
   </footer>
@@ -570,7 +617,13 @@ function refresh() {
   els.sampleCount.textContent = String(state.samples.length);
   renderCounts();
   [...els.labelButtons.querySelectorAll("button")].forEach(b => {
-    b.classList.toggle("active", b.dataset.label === state.currentLabel);
+    const on = b.dataset.label === state.currentLabel;
+    b.classList.toggle("active", on);
+    // スマホでは印ボタンが横スクロールの1列になるので、
+    // 選んだものが画面外に隠れないよう寄せる
+    if (on && b.scrollIntoView) {
+      b.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+    }
   });
   setBusy(state.busy);
 }

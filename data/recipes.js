@@ -21,21 +21,21 @@
 // 水遁・黒雨は分身の術と完全に同一（未→巳→寅）だったため外した。
 const JUTSU_RECIPES = [
   // effect を書くと専用の演出になる。省略すると既定の爆発系。
-  { id: "bunshin",   name: "分身の術",           signs: ["hitsuji", "mi", "tora"],                    element: "neutral", effect: "clone", clones: 4 },
-  { id: "henge",     name: "変身の術",           signs: ["inu", "i", "hitsuji"],                      element: "neutral" },
-  { id: "raikiri",   name: "雷遁・雷切",         signs: ["ushi", "u", "saru"],                        element: "lightning" },
-  { id: "haisekisho", name: "火遁・灰積焼",      signs: ["mi", "ne", "tora"],                         element: "fire" },
-  { id: "rougane",   name: "氷遁・狼牙雪崩の術", signs: ["ne", "u", "inu"],                           element: "ice" },
-  { id: "izanagi",   name: "イザナギ",           signs: ["u", "i", "hitsuji"],                        element: "neutral" },
-  { id: "mokusatsu", name: "木遁・黙殺縛",       signs: ["tora", "inu", "mi"],                        element: "wood" },
-  { id: "hakugeki",  name: "白激の術",           signs: ["mi", "ne", "tatsu"],                        element: "neutral" },
-  { id: "doryudan",  name: "土遁・土龍弾",       signs: ["hitsuji", "uma", "tatsu", "tora"],          element: "earth" },
-  { id: "ryuka",     name: "火遁・龍火の術",     signs: ["mi", "tatsu", "u", "tora"],                 element: "fire" },
-  { id: "edotensei", name: "穢土転生",           signs: ["tora", "mi", "inu", "tatsu"],               element: "neutral" },
-  { id: "kawara",    name: "忍法・瓦手裏剣",     signs: ["tora", "tatsu", "ne", "tora"],              element: "earth" },
-  { id: "kuchiyose", name: "口寄せの術",         signs: ["i", "inu", "tori", "saru", "hitsuji"],      element: "neutral" },
-  { id: "goukakyu",  name: "火遁・豪火球の術",   signs: ["mi", "hitsuji", "saru", "i", "uma", "tora"], element: "fire" },
-  { id: "housenka",  name: "火遁・鳳仙火の術",   signs: ["ne", "tora", "inu", "ushi", "u", "tora"],   element: "fire" },
+  { id: "bunshin",   name: "分身の術", nameEn: "Clone Jutsu",           signs: ["hitsuji", "mi", "tora"],                    element: "neutral", effect: "clone", clones: 4 },
+  { id: "henge",     name: "変身の術", nameEn: "Transformation Jutsu",           signs: ["inu", "i", "hitsuji"],                      element: "neutral" },
+  { id: "raikiri",   name: "雷遁・雷切", nameEn: "Lightning Style: Lightning Blade",         signs: ["ushi", "u", "saru"],                        element: "lightning" },
+  { id: "haisekisho", name: "火遁・灰積焼", nameEn: "Fire Style: Ash Pile Burning",      signs: ["mi", "ne", "tora"],                         element: "fire" },
+  { id: "rougane",   name: "氷遁・狼牙雪崩の術", nameEn: "Ice Style: Wolf Fang Avalanche", signs: ["ne", "u", "inu"],                           element: "ice" },
+  { id: "izanagi",   name: "イザナギ", nameEn: "Izanagi",           signs: ["u", "i", "hitsuji"],                        element: "neutral" },
+  { id: "mokusatsu", name: "木遁・黙殺縛", nameEn: "Wood Style: Silent Strangle",       signs: ["tora", "inu", "mi"],                        element: "wood" },
+  { id: "hakugeki",  name: "白激の術", nameEn: "White Rage Jutsu",           signs: ["mi", "ne", "tatsu"],                        element: "neutral" },
+  { id: "doryudan",  name: "土遁・土龍弾", nameEn: "Earth Style: Earth Dragon Bullet",       signs: ["hitsuji", "uma", "tatsu", "tora"],          element: "earth" },
+  { id: "ryuka",     name: "火遁・龍火の術", nameEn: "Fire Style: Dragon Flame Jutsu",     signs: ["mi", "tatsu", "u", "tora"],                 element: "fire" },
+  { id: "edotensei", name: "穢土転生", nameEn: "Impure World Reincarnation",           signs: ["tora", "mi", "inu", "tatsu"],               element: "neutral" },
+  { id: "kawara",    name: "忍法・瓦手裏剣", nameEn: "Ninja Art: Tile Shuriken",     signs: ["tora", "tatsu", "ne", "tora"],              element: "earth" },
+  { id: "kuchiyose", name: "口寄せの術", nameEn: "Summoning Jutsu",         signs: ["i", "inu", "tori", "saru", "hitsuji"],      element: "neutral" },
+  { id: "goukakyu",  name: "火遁・豪火球の術", nameEn: "Fire Style: Fireball Jutsu",   signs: ["mi", "hitsuji", "saru", "i", "uma", "tora"], element: "fire" },
+  { id: "housenka",  name: "火遁・鳳仙火の術", nameEn: "Fire Style: Phoenix Flower Jutsu",   signs: ["ne", "tora", "inu", "ushi", "u", "tora"],   element: "fire" },
 
   // 全44印。原典で最長とされる術。ネタ枠。
   //
@@ -44,7 +44,7 @@ const JUTSU_RECIPES = [
   // 壬の学習データを集めるまでは、この術だけ成立しない。
   //
   // 既存15種のどれもこの並びの途中には現れないことを確認済み（暴発なし）。
-  { id: "suiryudan", name: "水遁・水龍弾の術",
+  { id: "suiryudan", name: "水遁・水龍弾の術", nameEn: "Water Style: Water Dragon Jutsu",
     signs: [
       "ushi", "saru", "u", "ne", "i", "tori", "ushi", "uma", "tori", "ne",
       "tora", "inu", "tora", "mi", "ushi", "hitsuji", "mi", "i", "hitsuji", "ne",

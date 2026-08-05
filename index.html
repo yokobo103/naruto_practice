@@ -858,16 +858,17 @@
   <header>
     <div class="top">
       <div>
-        <h1>NARUTO印センサー</h1>
-        <div class="sub">カメラに向かって印を結ぶと忍術が発動します。15種を同時に待ち受けていて、順番の縛りはありません。</div>
+        <h1 data-i18n="title">NARUTO印センサー</h1>
+        <div class="sub" data-i18n="lead"></div>
       </div>
       <div class="topControls">
         <div class="segmented modeSwitch">
-          <button id="practiceMode" class="active">練習</button>
-          <button id="liveMode">実践</button>
-          <button id="directMode">印だけ</button>
+          <button id="practiceMode" class="active" data-i18n="practice">練習</button>
+          <button id="liveMode" data-i18n="live">実践</button>
+          <button id="directMode" data-i18n="direct">印だけ</button>
         </div>
-        <button id="startCamera" class="primary">カメラ開始</button>
+        <button id="langToggle" title="Language">EN</button>
+        <button id="startCamera" class="primary" data-i18n="startCam">カメラ開始</button>
       </div>
     </div>
   </header>
@@ -883,7 +884,7 @@
       </div>
       <div class="hud">
         <div class="hudTop">
-          <div class="pill">検出 <span id="handsBadge">0手</span></div>
+          <div class="pill"><span data-i18n="detected">検出</span> <span id="handsBadge">0</span></div>
           <div class="pill" id="modePill"><span id="modeBadge">練習</span></div>
         </div>
         <!-- 確定した瞬間だけ出す。認識中の途中経過は出さない（チラついて疲れる） -->
@@ -910,7 +911,7 @@
     <aside class="side">
       <!-- 練習モード: 術を1つ選んで、次に結ぶ印を1つずつ案内する -->
       <section class="panel guidePanel" id="guidePanel">
-        <h2>練習する術</h2>
+        <h2 data-i18n="guideTitle">練習する術</h2>
         <select id="guidePick" class="guidePick"></select>
         <div id="guideNext" class="guideNext"></div>
         <div id="guideSteps" class="guideSteps"></div>
@@ -918,19 +919,19 @@
 
       <!-- 右カラムは術レシピ専用。設定や数値は下の折りたたみに追い出した -->
       <section class="panel recipePanel" id="recipePanel">
-        <h2>待ち受け中の術 <span class="hint" id="recipeHint"></span></h2>
+        <h2><span data-i18n="waiting">待ち受け中の術</span> <span class="hint" id="recipeHint"></span></h2>
         <div id="recipeList" class="recipeList"></div>
       </section>
       <section class="panel liveNote" id="liveNote">
-        <h2>本番モード</h2>
-        <p class="sub">レシピは伏せています。結んだ印はカメラ下に出ます。</p>
+        <h2 data-i18n="liveTitle">実践モード</h2>
+        <p class="sub" data-i18n="liveNote"></p>
         <div id="firedLog" class="firedLog"></div>
       </section>
     </aside>
   </main>
 
   <details class="drawer">
-    <summary>設定</summary>
+    <summary data-i18n="drawerSettings">設定</summary>
     <div class="drawerBody">
       <div class="devRow">
         <button id="reloadSamples">JSON再読込</button>
@@ -994,7 +995,7 @@
   </details>
 
   <details class="drawer">
-    <summary>認識の中身（詰まったときに開く）</summary>
+    <summary data-i18n="drawerInside">認識の中身</summary>
     <div class="drawerBody twoCol">
       <div>
         <h3>認識状態</h3>
@@ -1019,7 +1020,7 @@
   </details>
 
   <details class="drawer">
-    <summary>ログ / データ / Debug</summary>
+    <summary data-i18n="drawerLogs">ログ / データ / Debug</summary>
     <div class="drawerBody twoCol">
       <div>
         <h3>認識ログ</h3>
@@ -1034,11 +1035,7 @@
     </div>
   </details>
 
-  <footer class="siteFoot">
-    個人が趣味で作った二次創作です。『NARUTO -ナルト-』は岸本斉史先生の作品であり、
-    集英社および権利者に帰属します。本デモは原作・出版社・アニメ制作者とは関係がなく、
-    公式のものではありません。非営利で、原作の素材は使用していません。
-  </footer>
+  <footer class="siteFoot" data-i18n="disclaimer"></footer>
 </div>
 
 <script src="./data/recipes.js"></script>
@@ -1064,22 +1061,22 @@ function cameraAspect() {
 }
 
 const SIGN_DEFS = [
-  { id: "ne", jp: "子", romaji: "ne", jutsu: "影縛りの構え" },
-  { id: "ushi", jp: "丑", romaji: "ushi", jutsu: "土遁・岩盾" },
-  { id: "tora", jp: "寅", romaji: "tora", jutsu: "火遁・烈火" },
-  { id: "u", jp: "卯", romaji: "u", jutsu: "瞬身準備" },
-  { id: "tatsu", jp: "辰", romaji: "tatsu", jutsu: "水遁・龍脈" },
-  { id: "mi", jp: "巳", romaji: "mi", jutsu: "チャクラ集中" },
-  { id: "uma", jp: "午", romaji: "uma", jutsu: "炎強化" },
-  { id: "hitsuji", jp: "未", romaji: "hitsuji", jutsu: "印結び加速" },
-  { id: "saru", jp: "申", romaji: "saru", jutsu: "雷光移動" },
-  { id: "tori", jp: "酉", romaji: "tori", jutsu: "風切り" },
-  { id: "inu", jp: "戌", romaji: "inu", jutsu: "防御結界" },
-  { id: "i", jp: "亥", romaji: "i", jutsu: "回復補助" },
+  { id: "ne", jp: "子", romaji: "ne", en: "Rat", jutsu: "影縛りの構え" },
+  { id: "ushi", jp: "丑", romaji: "ushi", en: "Ox", jutsu: "土遁・岩盾" },
+  { id: "tora", jp: "寅", romaji: "tora", en: "Tiger", jutsu: "火遁・烈火" },
+  { id: "u", jp: "卯", romaji: "u", en: "Hare", jutsu: "瞬身準備" },
+  { id: "tatsu", jp: "辰", romaji: "tatsu", en: "Dragon", jutsu: "水遁・龍脈" },
+  { id: "mi", jp: "巳", romaji: "mi", en: "Snake", jutsu: "チャクラ集中" },
+  { id: "uma", jp: "午", romaji: "uma", en: "Horse", jutsu: "炎強化" },
+  { id: "hitsuji", jp: "未", romaji: "hitsuji", en: "Ram", jutsu: "印結び加速" },
+  { id: "saru", jp: "申", romaji: "saru", en: "Monkey", jutsu: "雷光移動" },
+  { id: "tori", jp: "酉", romaji: "tori", en: "Bird", jutsu: "風切り" },
+  { id: "inu", jp: "戌", romaji: "inu", en: "Dog", jutsu: "防御結界" },
+  { id: "i", jp: "亥", romaji: "i", en: "Boar", jutsu: "回復補助" },
   // 壬は十二支ではなく十干（みずのえ）。水遁・水龍弾の術で使われるため13番目として足した。
-  { id: "mizunoe", jp: "壬", romaji: "mizunoe", jutsu: "水気集中" },
-  { id: "transition", jp: "遷移", romaji: "transition", jutsu: "補助クラス" },
-  { id: "none", jp: "印以外", romaji: "none", jutsu: "棄却クラス" }
+  { id: "mizunoe", jp: "壬", romaji: "mizunoe", en: "Mizunoe", jutsu: "水気集中" },
+  { id: "transition", jp: "遷移", romaji: "transition", en: "transition", jutsu: "補助クラス" },
+  { id: "none", jp: "印以外", romaji: "none", en: "none", jutsu: "棄却クラス" }
 ];
 
 const DIRECT_SIGNS = SIGN_DEFS.filter(s => s.id !== "transition").map(s => s.id);
@@ -1216,6 +1213,7 @@ const els = {
   canvas: document.getElementById("canvas"),
   status: document.getElementById("status"),
   startCamera: document.getElementById("startCamera"),
+  langToggle: document.getElementById("langToggle"),
   reloadSamples: document.getElementById("reloadSamples"),
   loadJsonButton: document.getElementById("loadJsonButton"),
   jsonFile: document.getElementById("jsonFile"),
@@ -1274,13 +1272,145 @@ const els = {
   debugBox: document.getElementById("debugBox")
 };
 
+// ===== 表示言語 =====
+// 印の漢字はそのまま出す（それ自体が見どころなので）。英語では読みを
+// NARUTOの英語版に合わせた呼び方（Rat, Ox, Tiger, Hare, ...）で添える。
+const I18N = {
+  ja: {
+    title: "NARUTO印センサー",
+    lead: "カメラに向かって印を結ぶと忍術が発動します。16種を同時に待ち受けていて、順番の縛りはありません。",
+    practice: "練習", live: "実践", direct: "印だけ",
+    startCam: "カメラ開始", detected: "検出", hands: n => `${n}手`,
+    modePractice: "練習", modeLive: "実践", modeDirect: "印だけ",
+    statusPractice: "練習モード: 術を選ぶと、次に結ぶ印を1つずつ案内します。",
+    statusLive: n => `実践モード: ${n}種を同時待ち受け。好きな印から結んでください。`,
+    statusDirect: "印だけモード: 認識した印をその場で表示します。",
+    loading: "JSONとMediaPipeを準備しています。",
+    loaded: n => `JSON読込完了: ${n} samples`,
+    camReady: "カメラ起動完了。印を結んでください。",
+    guideTitle: "練習する術", guideFirst: "まずは この印から", guideNext: "次は この印だよ",
+    guideWrong: jp => `それは ${jp} です。次は…`,
+    guideCount: (i, n) => `${i}/${n} 印まで完了`,
+    guideDone: "できました", guideDoneCount: n => `${n}/${n} 印`,
+    waiting: "待ち受け中の術", kinds: n => `${n}種`,
+    liveTitle: "実践モード", liveNote: "レシピは伏せています。結んだ印はカメラ下に出ます。",
+    remain: n => `あと${n}`, fire: "発動",
+    tieSign: "印を結ぶ", noHistory: "印を結んでください（順番の縛りなし）",
+    shortest: (name, n) => `最短は「${name}」まであと${n}印`,
+    holding: n => `${n}印を保持中`,
+    drawerSettings: "設定", drawerInside: "認識の中身（詰まったときに開く）",
+    drawerLogs: "ログ / データ / Debug",
+    reasonNoHand: "手が見えていません",
+    reasonUnknown: (d, lim, h) => `未知の形（距離 ${d} > ${lim} / ${h}）`,
+    reasonReject: l => `印ではない形（${l}と判定）`,
+    reasonNoCand: "候補なし",
+    reasonUnarm: "一度ほどいてください（前の印のまま）",
+    reasonMoving: (s, t) => `まだ動いています（速さ ${s} > ${t}）`,
+    reasonSettling: (a, b) => `静止中 ${a}/${b}ms`,
+    reasonLowScore: (s, t) => `確信度不足（${s} < ${t}）`,
+    reasonOk: "確定",
+    oneHand: "1手", twoHand: "2手",
+    loadFail: m => `JSON読込に失敗しました: ${m}。localhostで開くか、JSON手動読込を使ってください。`,
+    mpLoading: "MediaPipe Hands を準備しています。",
+    camFail: m => `カメラ起動に失敗しました: ${m}`,
+    noHandShort: "手なし", outsideRoi: "領域外",
+    limit: "上限", relaxed: x => `(${x}倍緩和)`, noCandShort: "候補なし",
+    roiHint: "手の中心を印領域に入れてください。", roiEmpty: "印領域内に手がありません。",
+    roiOut: d => `領域外: ${d}`,
+    manualLoaded: n => `手動JSON読込完了: ${n} samples`,
+    disclaimer: "個人が趣味で作った二次創作です。『NARUTO -ナルト-』は岸本斉史先生の作品であり、集英社および権利者に帰属します。本デモは原作・出版社・アニメ制作者とは関係がなく、公式のものではありません。非営利で、原作の素材は使用していません。"
+  },
+  en: {
+    title: "NARUTO Hand Seal Sensor",
+    lead: "Form hand seals in front of the camera to cast jutsu. 16 jutsu are watched at once — there is no fixed order.",
+    practice: "Practice", live: "Free", direct: "Seals only",
+    startCam: "Start camera", detected: "Detected", hands: n => n === 1 ? "1 hand" : `${n} hands`,
+    modePractice: "Practice", modeLive: "Free", modeDirect: "Seals",
+    statusPractice: "Practice: pick a jutsu and it will guide you one seal at a time.",
+    statusLive: n => `Free mode: ${n} jutsu watched at once. Start from any seal.`,
+    statusDirect: "Seals only: shows whichever seal is recognised.",
+    loading: "Loading data and MediaPipe…",
+    loaded: n => `Loaded ${n} samples`,
+    camReady: "Camera ready. Form a seal.",
+    guideTitle: "Jutsu to practise", guideFirst: "Start with this seal", guideNext: "Next seal",
+    guideWrong: jp => `That was ${jp}. Next is…`,
+    guideCount: (i, n) => `${i} of ${n} seals done`,
+    guideDone: "Complete", guideDoneCount: n => `${n}/${n} seals`,
+    waiting: "Jutsu being watched", kinds: n => `${n} jutsu`,
+    liveTitle: "Free mode", liveNote: "Recipes are hidden. Seals you form appear under the camera.",
+    remain: n => `${n} left`, fire: "Ready",
+    tieSign: "form a seal", noHistory: "Form any seal — no fixed order",
+    shortest: (name, n) => `Closest: ${name} — ${n} seal${n === 1 ? "" : "s"} to go`,
+    holding: n => `holding ${n} seal${n === 1 ? "" : "s"}`,
+    drawerSettings: "Settings", drawerInside: "Recognition internals (open when stuck)",
+    drawerLogs: "Logs / data / debug",
+    reasonNoHand: "No hand detected",
+    reasonUnknown: (d, lim, h) => `Unknown shape (distance ${d} > ${lim} / ${h})`,
+    reasonReject: l => `Not a seal (matched ${l})`,
+    reasonNoCand: "No candidate",
+    reasonUnarm: "Release first — still holding the last seal",
+    reasonMoving: (s, t) => `Still moving (speed ${s} > ${t})`,
+    reasonSettling: (a, b) => `Holding still ${a}/${b}ms`,
+    reasonLowScore: (s, t) => `Not confident enough (${s} < ${t})`,
+    reasonOk: "Confirmed",
+    oneHand: "1 hand", twoHand: "2 hands",
+    loadFail: m => `Failed to load data: ${m}. Open via localhost, or load a JSON manually.`,
+    mpLoading: "Loading MediaPipe Hands…",
+    camFail: m => `Could not start the camera: ${m}`,
+    noHandShort: "none", outsideRoi: "outside",
+    limit: "limit", relaxed: x => `(×${x} eased)`, noCandShort: "no candidate",
+    roiHint: "Bring your hands into the seal area.", roiEmpty: "No hand inside the seal area.",
+    roiOut: d => `Outside: ${d}`,
+    manualLoaded: n => `Loaded ${n} samples from file`,
+    disclaimer: "A personal fan project. NARUTO is created by Masashi Kishimoto and belongs to Shueisha and its rights holders. This demo is unofficial and not affiliated with the original work, its publisher or the anime studio. Non-commercial; no original artwork, audio or other assets are used."
+  }
+};
+
+// 端末の言語で初期値を決める。一度選んだら記憶する。
+let LANG = (() => {
+  const saved = (() => { try { return localStorage.getItem("naruto_lang"); } catch (e) { return null; } })();
+  if (saved === "ja" || saved === "en") return saved;
+  return (navigator.language || "").toLowerCase().startsWith("ja") ? "ja" : "en";
+})();
+
+function t(key, ...args) {
+  const v = (I18N[LANG] || I18N.ja)[key];
+  return typeof v === "function" ? v(...args) : (v ?? key);
+}
+
+// 印の表示名。英語では漢字に読みを添える（漢字自体は見どころなので残す）
+function signLabel(id) {
+  const s = signDef(id);
+  return LANG === "en" ? (s.en || s.romaji) : s.jp;
+}
+function jutsuName(r) {
+  return LANG === "en" ? (r.nameEn || r.name) : r.name;
+}
+
+function setLang(lang) {
+  LANG = lang;
+  try { localStorage.setItem("naruto_lang", lang); } catch (e) { /* 保存できなくても続行 */ }
+  document.documentElement.lang = lang;
+  applyStaticText();
+  setMode(state.mode);
+}
+
+// HTMLに直接書いてある文言を差し替える
+function applyStaticText() {
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  document.title = t("title");
+  els.langToggle.textContent = LANG === "ja" ? "EN" : "日本語";
+}
+
 function signDef(id) {
   return SIGN_DEFS.find(s => s.id === id) || { id, jp: id, romaji: id, jutsu: "---" };
 }
 
 function signText(id) {
   const s = signDef(id);
-  return `${s.romaji} / ${s.jp}`;
+  return LANG === "en" ? `${s.en || s.romaji} / ${s.jp}` : `${s.romaji} / ${s.jp}`;
 }
 
 function setStatus(message, isError = false) {
@@ -1289,16 +1419,16 @@ function setStatus(message, isError = false) {
 }
 
 async function loadSamplesFromUrl() {
-  setStatus("収集済みJSONを読み込んでいます。");
+  setStatus(t("loading"));
   try {
     const res = await fetch(SAMPLE_JSON_URL, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     ingestSamples(json);
-    setStatus(`JSON読込完了: ${state.samples.length} samples`);
+    setStatus(t("loaded", state.samples.length));
   } catch (error) {
     console.error(error);
-    setStatus(`JSON読込に失敗しました: ${error.message}。localhostで開くか、JSON手動読込を使ってください。`, true);
+    setStatus(t("loadFail", error.message), true);
   }
 }
 
@@ -1341,14 +1471,14 @@ function renderSampleCounts() {
     const stat = state.sampleStats.get(sign.id) || { total: 0, one: 0, two: 0, other: 0 };
     const row = document.createElement("div");
     row.className = "countLine";
-    row.innerHTML = `<strong>${sign.romaji} / ${sign.jp}</strong><span>total ${stat.total} / 1手 ${stat.one} / 2手 ${stat.two}${stat.other ? ` / other ${stat.other}` : ""}</span>`;
+    row.innerHTML = `<strong>${sign.jp} ${LANG === "en" ? (sign.en || sign.romaji) : sign.romaji}</strong><span>total ${stat.total} / ${stat.one}+${stat.two}${stat.other ? ` / other ${stat.other}` : ""}</span>`;
     els.sampleCounts.appendChild(row);
   }
 }
 
 async function startCamera() {
   if (state.camera) return;
-  setStatus("MediaPipe Handsを初期化しています。");
+  setStatus(t("mpLoading"));
   els.startCamera.disabled = true;
   try {
     state.hands = new Hands({
@@ -1372,12 +1502,12 @@ async function startCamera() {
     await state.camera.start();
     reportCamera();
     els.video.addEventListener("loadedmetadata", reportCamera);
-    setStatus("カメラ起動完了。印を結んでください。");
+    setStatus(t("camReady"));
   } catch (error) {
     console.error(error);
     state.camera = null;
     els.startCamera.disabled = false;
-    setStatus(`カメラ起動に失敗しました: ${error.message}`, true);
+    setStatus(t("camFail", error.message), true);
   }
 }
 
@@ -1442,11 +1572,11 @@ function handleNoHands(results) {
   state.frameHistory.push({ label: null, score: 0, handsCount: 0, at: performance.now() });
   trimHistory();
   renderRoi(null);
-  els.handsBadge.textContent = "0手";
+  els.handsBadge.textContent = t("hands", 0);
   els.handsCount.textContent = "0";
   els.handedness.textContent = "---";
   els.vectorLength.textContent = "---";
-  els.frameEstimate.textContent = "手なし";
+  els.frameEstimate.textContent = t("noHandShort");
   els.stableEstimate.textContent = "---";
   updateMotion(null);
   updateMotionPhase(null);
@@ -1455,7 +1585,7 @@ function handleNoHands(results) {
   els.holdDuration.textContent = "0.00";
   els.distMetric.textContent = "---";
   renderTopCandidates([]);
-  setStatus("手を検出できません。");
+  setStatus(t("reasonNoHand"));
   updateSequenceTimer();
   renderDebug();
 }
@@ -1466,18 +1596,18 @@ function handleOutsideRoi(feature, roiCheck) {
   state.frameHistory.push({ label: null, score: 0, handsCount: feature.handsCount, at: performance.now() });
   trimHistory();
   const motion = updateMotion(feature);
-  els.handsBadge.textContent = `${feature.handsCount}手`;
+  els.handsBadge.textContent = t("hands", feature.handsCount);
   els.handsCount.textContent = String(feature.handsCount);
   els.handedness.textContent = feature.handedness || "---";
   els.vectorLength.textContent = String(feature.vector.length);
-  els.frameEstimate.textContent = "領域外";
+  els.frameEstimate.textContent = t("outsideRoi");
   els.stableEstimate.textContent = "---";
   els.holdDuration.textContent = motion.speed.toFixed(2);
   renderTopCandidates([]);
   const detail = roiCheck.handCenters.length
-    ? `手の中心を印領域に入れてください。`
-    : "印領域内に手がありません。";
-  setStatus(`領域外: ${detail}`);
+    ? t("roiHint")
+    : t("roiEmpty");
+  setStatus(t("roiOut", detail));
   updateSequenceTimer();
   renderDebug();
 }
@@ -1885,25 +2015,25 @@ function updateMotionPhase(label) {
 // 確定を止めている条件を1つに絞って日本語で返す。
 // どのゲートで止まっているかが画面から分からないと、調整が当てずっぽうになる。
 function confirmBlockReason(feature, top, motion, known) {
-  if (!feature) return "手が見えていません";
+  if (!feature) return t("reasonNoHand");
   if (!known) {
-    const hands = feature.handsCount >= 2 ? "2手" : "1手";
-    return `未知の形（距離 ${state.lastKnnDist.toFixed(1)} > ${state.knnLimit.toFixed(1)} / ${hands}）`;
+    const hands = t(feature.handsCount >= 2 ? "twoHand" : "oneHand");
+    return t("reasonUnknown", state.lastKnnDist.toFixed(1), state.knnLimit.toFixed(1), hands);
   }
-  if (state.rejectedAs) return `印ではない形（${state.rejectedAs}と判定）`;
-  if (!top) return "候補なし";
-  if (!motion.armed) return "一度ほどいてください（前の印のまま）";
+  if (state.rejectedAs) return t("reasonReject", state.rejectedAs);
+  if (!top) return t("reasonNoCand");
+  if (!motion.armed) return t("reasonUnarm");
   if (motion.phase !== "still") {
-    return `まだ動いています（速さ ${motion.speed.toFixed(2)} > ${motion.stopThreshold.toFixed(2)}）`;
+    return t("reasonMoving", motion.speed.toFixed(2), motion.stopThreshold.toFixed(2));
   }
   if (motion.stillMs < state.settleMs) {
-    return `静止中 ${Math.round(motion.stillMs)}/${Math.round(state.settleMs)}ms`;
+    return t("reasonSettling", Math.round(motion.stillMs), Math.round(state.settleMs));
   }
   const score = Number(top.avgScore ?? top.score ?? 0);
   if (score < state.confirmScore) {
-    return `確信度不足（${score.toFixed(2)} < ${state.confirmScore.toFixed(2)}）`;
+    return t("reasonLowScore", score.toFixed(2), state.confirmScore.toFixed(2));
   }
-  return "確定";
+  return t("reasonOk");
 }
 
 function getTMScores(croppedImage) {
@@ -2012,19 +2142,19 @@ function resetHold() {
 }
 
 function renderRecognition(feature, top, stable, ranked, motion) {
-  els.handsBadge.textContent = `${feature.handsCount}手`;
+  els.handsBadge.textContent = t("hands", feature.handsCount);
   els.handsCount.textContent = String(feature.handsCount);
   els.handedness.textContent = feature.handedness || "---";
   els.vectorLength.textContent = String(feature.vector.length);
   els.frameEstimate.textContent = top ? `${signText(top.label)} ${Math.round(top.score * 100)}%` : "---";
   els.stableEstimate.textContent = stable ? `${signText(stable.label)} ${stable.count}/${state.stabilityWindow} ${Math.round(stable.avgScore * 100)}%` : "---";
-  els.holdDuration.textContent = `${motion.speed.toFixed(2)} / 上限 ${motion.stopThreshold.toFixed(2)}${motion.tolerance > 1 ? ` (${motion.tolerance}倍緩和)` : ""}`;
+  els.holdDuration.textContent = `${motion.speed.toFixed(2)} / ${t("limit")} ${motion.stopThreshold.toFixed(2)}${motion.tolerance > 1 ? " " + t("relaxed", motion.tolerance) : ""}`;
   els.distMetric.textContent = Number.isFinite(state.lastKnnDist)
     ? `${state.lastKnnDist.toFixed(2)} / 上限 ${state.knnLimit.toFixed(1)}`
     : "---";
   els.blockReason.textContent = state.blockReason;
   renderTopCandidates(ranked.slice(0, 3));
-  setStatus(`${top ? signText(top.label) : "候補なし"} / ${feature.handsCount}手 / ${state.blockReason}`);
+  setStatus(`${top ? signText(top.label) : t("noCandShort")} / ${t("hands", feature.handsCount)} / ${state.blockReason}`);
 }
 
 function renderTopCandidates(candidates) {
@@ -2069,7 +2199,7 @@ function triggerConfirm(label) {
 
 function triggerDirectJutsu(label) {
   const s = signDef(label);
-  els.jutsuText.textContent = `${s.jp}・${s.jutsu}`;
+  els.jutsuText.textContent = LANG === "en" ? `${s.en || s.romaji}` : `${s.jp}・${s.jutsu}`;
   els.jutsuText.classList.remove("active");
   void els.jutsuText.offsetWidth;
   els.jutsuText.classList.add("active");
@@ -2093,7 +2223,7 @@ function renderSequence() {
   if (!hist.length) {
     const div = document.createElement("div");
     div.className = "step empty";
-    div.innerHTML = `<div class="jp">—</div><div class="id">印を結ぶ</div>`;
+    div.innerHTML = `<div class="jp">—</div><div class="id">${t("tieSign")}</div>`;
     els.sequenceSteps.appendChild(div);
   } else {
     // 水龍弾のような長い術があるので、全部並べると画面が埋まる。末尾だけ出す。
@@ -2108,7 +2238,7 @@ function renderSequence() {
       const s = signDef(h.label);
       const div = document.createElement("div");
       div.className = "step done";
-      div.innerHTML = `<div class="jp">${s.jp}</div><div class="id">${s.romaji}</div>`;
+      div.innerHTML = `<div class="jp">${s.jp}</div><div class="id">${LANG === "en" ? (s.en || s.romaji) : s.romaji}</div>`;
       els.sequenceSteps.appendChild(div);
     });
   }
@@ -2116,8 +2246,8 @@ function renderSequence() {
   // 本番モードはレシピを伏せる。組み立てはしないで抜ける
   if (!state.showRecipes) {
     els.sequenceStatus.textContent = hist.length
-      ? `${hist.length}印を保持中`
-      : "印を結んでください";
+      ? t("holding", hist.length)
+      : t("noHistory");
     return;
   }
 
@@ -2159,16 +2289,16 @@ function renderSequence() {
     row.innerHTML = `
       <div class="rHead">
         <span class="rElem" style="background:${st.color}">${st.label}</span>
-        <span class="rName">${escapeHtml(r.name)}</span>
-        <span class="rRemain">${p.remaining === 0 ? "発動" : `あと${p.remaining}`}</span>
+        <span class="rName">${escapeHtml(jutsuName(r))}</span>
+        <span class="rRemain">${p.remaining === 0 ? t("fire") : t("remain", p.remaining)}</span>
       </div>${body}`;
     els.recipeList.appendChild(row);
   }
 
   const closest = ranked[0];
   els.sequenceStatus.textContent = closest && hist.length
-    ? `最短は「${closest.r.name}」まであと${closest.p.remaining}印`
-    : "印を結んでください（順番の縛りなし）";
+    ? t("shortest", jutsuName(closest.r), closest.p.remaining)
+    : t("noHistory");
 }
 
 // モードは3つ。
@@ -2194,14 +2324,14 @@ function setMode(mode) {
   els.practiceMode.classList.toggle("active", mode === "guide");
   els.liveMode.classList.toggle("active", mode === "free");
   els.directMode.classList.toggle("active", mode === "direct");
-  els.recipeHint.textContent = `${JUTSU_RECIPES.length}種`;
+  els.recipeHint.textContent = t("kinds", JUTSU_RECIPES.length);
   if (mode !== "free") els.firedLog.innerHTML = "";
 
-  els.modeBadge.textContent = mode === "guide" ? "練習" : mode === "free" ? "実践" : "印だけ";
+  els.modeBadge.textContent = t(mode === "guide" ? "modePractice" : mode === "free" ? "modeLive" : "modeDirect");
   setStatus(
-    mode === "guide" ? "練習モード: 術を選ぶと、次に結ぶ印を1つずつ案内します。" :
-    mode === "free"  ? `実践モード: ${JUTSU_RECIPES.length}種を同時待ち受け。好きな印から結んでください。` :
-                       "印だけモード: 認識した印をその場で表示します。");
+    mode === "guide" ? t("statusPractice") :
+    mode === "free"  ? t("statusLive", JUTSU_RECIPES.length) :
+                       t("statusDirect"));
 
   if (mode === "guide") { buildGuidePicker(); renderGuide(); }
   renderSequence();
@@ -2245,21 +2375,21 @@ function renderGuide() {
 
   if (i >= total) {
     els.guideNext.className = "guideNext done";
-    els.guideNext.innerHTML = `<div class="lead">できました</div>
-      <div class="kanji">${escapeHtml(r.name)}</div>
-      <div class="count">${total}/${total} 印</div>`;
+    els.guideNext.innerHTML = `<div class="lead">${t("guideDone")}</div>
+      <div class="kanji">${escapeHtml(jutsuName(r))}</div>
+      <div class="count">${t("guideDoneCount", total)}</div>`;
   } else {
     const sd = signDef(r.signs[i]);
     const wrong = state.guideWrong;
     els.guideNext.className = "guideNext" + (wrong ? " wrong" : "");
     els.guideNext.innerHTML = `
       <div class="lead">${wrong
-        ? `それは <b>${signDef(wrong).jp}</b> です。次は…`
-        : (i === 0 ? "まずは この印から" : "次は この印だよ")}</div>
+        ? t("guideWrong", `<b>${signLabel(wrong)}</b>`)
+        : t(i === 0 ? "guideFirst" : "guideNext")}</div>
       <img src="./assets/signs/${sd.id}.jpg" alt="${sd.jp}" onerror="this.style.display='none'">
       <div class="kanji">${sd.jp}</div>
-      <div class="romaji">${sd.romaji}</div>
-      <div class="count">${i}/${total} 印まで完了</div>`;
+      <div class="romaji">${LANG === "en" ? (sd.en || sd.romaji) : sd.romaji}</div>
+      <div class="count">${t("guideCount", i, total)}</div>`;
   }
 
   els.guideSteps.innerHTML = r.signs.map((id, n) =>
@@ -2269,7 +2399,8 @@ function renderGuide() {
 function buildGuidePicker() {
   els.guidePick.innerHTML = JUTSU_RECIPES
     .slice().sort((a, b) => a.signs.length - b.signs.length)
-    .map(r => `<option value="${r.id}">${escapeHtml(r.name)}（${r.signs.length}印）</option>`).join("");
+    .map(r => `<option value="${r.id}">${escapeHtml(jutsuName(r))}${
+      LANG === "en" ? ` (${r.signs.length} seals)` : `（${r.signs.length}印）`}</option>`).join("");
   if (!state.guideId) state.guideId = els.guidePick.value;
   els.guidePick.value = state.guideId;
 }
@@ -2289,7 +2420,7 @@ function advanceSequenceIfNeeded(label) {
       const row = document.createElement("div");
       row.className = "fired";
       row.style.setProperty("--fc", st.color);
-      row.textContent = `${hit.name}　${hit.signs.map(x => signDef(x).jp).join("→")}`;
+      row.textContent = `${jutsuName(hit)}　${hit.signs.map(x => signDef(x).jp).join("→")}`;
       els.firedLog.prepend(row);
       while (els.firedLog.children.length > 8) els.firedLog.lastChild.remove();
     }
@@ -2452,7 +2583,7 @@ function fireJutsu(recipe) {
   els.jutsuEffect.style.setProperty("--elemColor", st.color);
   els.jutsuEffect.style.setProperty("--elemGlow", st.glow);
   els.jutsuText.style.color = st.glow;
-  els.jutsuText.textContent = `${recipe.name}！`;
+  els.jutsuText.textContent = LANG === "en" ? recipe.nameEn || recipe.name : `${recipe.name}！`;
   els.jutsuEffect.innerHTML = recipe.effect === "clone"
     ? ""                                        // 分身は炎を出さない
     : '<div class="fireWave"></div><div class="fireRing"></div>';
@@ -2558,7 +2689,7 @@ function bindControls() {
     reader.onload = () => {
       try {
         ingestSamples(JSON.parse(reader.result));
-        setStatus(`手動JSON読込完了: ${state.samples.length} samples`);
+        setStatus(t("manualLoaded", state.samples.length));
       } catch (error) {
         setStatus(`手動JSON読込に失敗しました: ${error.message}`, true);
       }
@@ -2572,6 +2703,7 @@ function bindControls() {
     renderDebug();
   });
   els.directMode.addEventListener("click", () => setMode("direct"));
+  els.langToggle.addEventListener("click", () => setLang(LANG === "ja" ? "en" : "ja"));
   els.practiceMode.addEventListener("click", () => setMode("guide"));
   els.liveMode.addEventListener("click", () => setMode("free"));
   els.guidePick.addEventListener("change", () => {
@@ -2697,6 +2829,8 @@ function bindRoiDrag() {
 
 function init() {
   bindControls();
+  document.documentElement.lang = LANG;
+  applyStaticText();
   setMode("guide");   // 起動時は練習モード
   renderSequence();
   renderSampleCounts();

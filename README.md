@@ -1,4 +1,97 @@
-# NARUTO印センサー
+# NARUTO Hand Seal Sensor
+
+**[▶ Try it in your browser](https://yokobo103.github.io/naruto_practice/)** — no install, nothing is uploaded.
+
+Form NARUTO hand seals in front of your webcam and cast jutsu.
+
+![NARUTO Hand Seal Sensor](assets/ogp.png)
+
+> **This is a personal fan project.**
+> NARUTO is created by Masashi Kishimoto and belongs to Shueisha and its rights holders.
+> This demo is unofficial and not affiliated with the original work, its publisher or the
+> anime studio. It is non-commercial and uses no original artwork, audio or other assets.
+> It will be taken down promptly if a rights holder asks.
+
+MediaPipe Hands reads your hand landmarks in the browser and a k-NN classifier recognises
+the seal. 13 seals are supported: the twelve zodiac seals (Rat, Ox, Tiger, Hare, Dragon,
+Snake, Horse, Ram, Monkey, Bird, Dog, Boar) plus Mizunoe, which the Water Dragon Jutsu needs.
+Leave-one-out accuracy is **99.0%** (n=1301).
+
+**16 jutsu are watched at the same time and there is no fixed order.** What you cast is
+up to you. The video never leaves your machine — everything runs client-side.
+
+## Modes
+
+| Mode | What it does |
+|---|---|
+| **Practice** | Pick a jutsu and it guides you **one seal at a time**, with a photo of the hand shape. Forming the wrong seal does not reset your progress. |
+| **Free** | All 16 jutsu watched at once. No guidance, no photos. |
+| Seals only | Shows whichever seal is recognised (for tuning). |
+
+The interface is available in English and Japanese — it follows your browser language,
+and the `EN` / `日本語` button in the header switches it. The kanji stay on screen in both
+languages, because they are half the fun.
+
+## The idea: confirm on the break in movement, not on stillness
+
+An earlier version confirmed a seal after you **held it still for 1.5 seconds**. Six seals
+meant nine seconds of standing frozen — it felt like taking an exam, not like being a ninja.
+
+The current version confirms **the moment your hand stops** (100 ms). Double-fires are
+prevented not by a cooldown timer but by "you have to release before the next one counts".
+That turns the interaction into the real rhythm — **seal → move → seal** — and six seals
+take about 2.5 seconds.
+
+There is also no box to put your hands in. A framing box is a cheap way to avoid false
+positives, but it is a cage to use. Instead the app asks "how far is this hand shape from
+any seal I know?" and rejects the ones that are too far.
+
+## Running locally
+
+```bash
+python -m http.server 8134
+```
+
+Then open `http://localhost:8134/`. A secure context is required for camera access —
+`localhost` works, and so does the HTTPS GitHub Pages link above. Plain `http://` to a
+LAN address usually will not.
+
+## Layout
+
+```
+index.html               the app
+data/signs.json          training data, 13 seals (0.95 MB)
+data/recipes.js          jutsu recipes — shared by the app and the checker
+tools/collect.html       data collection (works on phones too)
+tools/check_recipes.html recipe collision checker — open it after editing recipes
+tools/rebuild_vectors.py raw landmarks → published training data
+tools/make_sign_images.html builds the practice-mode reference photos
+docs/HISTORY.md          how this got here, and what was tried and dropped
+```
+
+`dataset/` and `archive/` are kept locally only — raw captures and two earlier
+generations of the project. See `docs/HISTORY.md`.
+
+## Notes for anyone poking at the code
+
+Most of what is interesting is written up in `docs/HISTORY.md`: the approaches that were
+abandoned and, more usefully, **the changes that looked sensible and made things worse**.
+A few things that cost real time to find:
+
+- **The camera aspect ratio matters and is not what you asked for.** The collector requests
+  1280×960 (4:3); the machine returns 1280×720 (16:9). MediaPipe normalises x by width and
+  y by height, so a different aspect silently stretches every feature. Training data and
+  runtime must agree. Landmarks are converted to width-normalised isotropic coordinates.
+- **Seals differ enormously in how stable MediaPipe's estimate is.** Held perfectly still,
+  the Boar seal's landmarks jitter about 8× more than the Bird seal's, because interlocked
+  fingers hide each other. A single global stillness threshold cannot serve both.
+- **A one-handed detection fills only 45 of 104 feature dimensions.** MediaPipe merges
+  overlapping hands unpredictably, and it does so at very different rates per seal.
+
+---
+
+<details>
+<summary><b>日本語のドキュメント（詳細）</b></summary>
 
 カメラに向かって印を結ぶと、忍術が発動するブラウザデモ。
 
@@ -237,3 +330,6 @@ python tools/rebuild_vectors.py dataset/pc.json dataset/phone.json data/signs.js
 `getUserMedia` は安全なコンテキストでしか動かない。PCの `localhost` では動くが、
 スマホからPCのIPに `http://` でアクセスするとカメラが許可されないことがある。
 HTTPSで配信するか、HTTPS対応のトンネルを使うのが確実。
+
+
+</details>

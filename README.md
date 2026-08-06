@@ -46,6 +46,27 @@ There is also no box to put your hands in. A framing box is a cheap way to avoid
 positives, but it is a cage to use. Instead the app asks "how far is this hand shape from
 any seal I know?" and rejects the ones that are too far.
 
+## Collecting the cases that annoy you
+
+Both hands are busy while you form seals, so you cannot take notes and you cannot really
+watch the screen either. The **misrecognition log** fills that gap.
+
+- **Speak** — the app reads out the seal it recognised, and announces the next one to form.
+  You can practise without looking at the screen at all.
+- **Record** — in Practice mode the app already knows which seal it is waiting for, so when
+  a *different* seal is confirmed it captures that case automatically. No input needed.
+- **Listen for "wrong"** — say ちがう / wrong and the last confirmation is logged, which
+  also works in Free mode. (Chrome/Edge only.)
+
+The log keeps the raw landmarks, so **exporting it produces a file you can feed straight
+into `tools/rebuild_vectors.py`** alongside your other captures. The seal you were actually
+forming becomes the label. In other words the moments that annoyed you turn directly into
+the training data that fixes them.
+
+```bash
+python tools/rebuild_vectors.py dataset/pc.json dataset/misfires.json data/signs.json
+```
+
 ## Running locally
 
 ```bash

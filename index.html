@@ -864,6 +864,22 @@
     }
     .guideSteps .gs.done { background: #ffd166; color: #10131c; font-weight: 700; }
     .guideSteps .gs.now { background: #5bc8ff; color: #10131c; font-weight: 700; }
+    /* イライラ記録 */
+    body.mode-direct .misfirePanel { display: none; }
+    .mfBtns { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+    .mfBtns button { min-height: 34px; padding: 5px 10px; font-size: 12px; }
+    .mfBtns button.active { background: #ffd166; color: #10131c; border-color: #ffd166; }
+    .mfBtns button.blue { background: #5bc8ff; color: #08121c; border-color: #5bc8ff; }
+    .mfList { display: flex; flex-direction: column; gap: 3px; max-height: 190px; overflow-y: auto; }
+    .mfRow {
+      font-size: 13px; padding: 4px 8px; border-radius: 6px;
+      background: rgba(255,107,107,.08); border-left: 2px solid #ff6b6b;
+      display: flex; gap: 6px; align-items: baseline;
+    }
+    .mfRow b, .mfRow span { font-family: var(--brush); font-size: 15px; }
+    .mfRow .mfNote { margin-left: auto; font-family: inherit; font-size: 11px; opacity: .5; }
+    /* 記録中はカメラ枠に赤いふちを出す（画面を見ていなくても端で分かる） */
+    body.recording .cameraBox { box-shadow: var(--shadow), inset 0 0 0 3px rgba(255,107,107,.55); }
   </style>
 </head>
 <body>
@@ -935,6 +951,21 @@
         <h2><span data-i18n="waiting">待ち受け中の術</span> <span class="hint" id="recipeHint"></span></h2>
         <div id="recipeList" class="recipeList"></div>
       </section>
+      <section class="panel misfirePanel" id="misfirePanel">
+        <h2><span data-i18n="misfireTitle">イライラ記録</span> <span class="hint" id="misfireCount">0</span></h2>
+        <p class="sub" data-i18n="misfireHint"></p>
+        <div class="mfBtns">
+          <button id="toggleSpeak">読み上げ OFF</button>
+          <button id="toggleRecord">記録 OFF</button>
+          <button id="toggleVoice">「ちがう」を聞く OFF</button>
+        </div>
+        <div id="misfireList" class="mfList"></div>
+        <div class="mfBtns">
+          <button id="misfireExport" class="blue" data-i18n="misfireExport" disabled>書き出す</button>
+          <button id="misfireClear" data-i18n="misfireClear" disabled>消す</button>
+        </div>
+      </section>
+
       <section class="panel liveNote" id="liveNote">
         <h2 data-i18n="liveTitle">実践モード</h2>
         <p class="sub" data-i18n="liveNote"></p>
@@ -1203,6 +1234,11 @@ const state = {
   guideId: null,            // 練習モードで選んでいる術
   guideIndex: 0,            // その術の何印目まで結べたか
   guideWrong: null,         // 直前に違う印を結んだときの表示用
+  speak: false,             // 確定した印を読み上げるか（手も目も塞がるので）
+  recording: false,         // 誤認識を記録するか
+  voice: false,             // 「ちがう」の音声を聞き取るか
+  misfires: [],             // 記録した誤認識
+  lastSpokenNext: null,     // 同じ案内を何度も読み上げないため
   centerTimer: 0,
   sequenceStartedAt: 0,
   roi: {
@@ -1266,6 +1302,14 @@ const els = {
   guideNext: document.getElementById("guideNext"),
   guideSteps: document.getElementById("guideSteps"),
   firedLog: document.getElementById("firedLog"),
+  misfirePanel: document.getElementById("misfirePanel"),
+  misfireCount: document.getElementById("misfireCount"),
+  misfireList: document.getElementById("misfireList"),
+  misfireExport: document.getElementById("misfireExport"),
+  misfireClear: document.getElementById("misfireClear"),
+  toggleSpeak: document.getElementById("toggleSpeak"),
+  toggleRecord: document.getElementById("toggleRecord"),
+  toggleVoice: document.getElementById("toggleVoice"),
   kSelect: document.getElementById("kSelect"),
   windowInput: document.getElementById("windowInput"),
   confirmInput: document.getElementById("confirmInput"),
@@ -1331,6 +1375,13 @@ const I18N = {
     roiHint: "手の中心を印領域に入れてください。", roiEmpty: "印領域内に手がありません。",
     roiOut: d => `領域外: ${d}`,
     manualLoaded: n => `手動JSON読込完了: ${n} samples`,
+    speakLabel: "読み上げ", recordLabel: "記録", voiceLabel: "「ちがう」を聞く",
+    misfireTitle: "イライラ記録", misfireHint: "誤認識した場面をためて、学習データに回せます",
+    misfireExport: "書き出す", misfireClear: "消す",
+    voiceUnsupported: "この端末は音声認識に対応していません（Chrome/Edgeなら使えます）。",
+    voiceDenied: "マイクの許可が必要です。",
+    voiceNoted: "記録しました",
+    recNow: "記録中",
     disclaimer: "個人が趣味で作った二次創作です。『NARUTO -ナルト-』は岸本斉史先生の作品であり、集英社および権利者に帰属します。本デモは原作・出版社・アニメ制作者とは関係がなく、公式のものではありません。非営利で、原作の素材は使用していません。"
   },
   en: {
@@ -1375,6 +1426,13 @@ const I18N = {
     roiHint: "Bring your hands into the seal area.", roiEmpty: "No hand inside the seal area.",
     roiOut: d => `Outside: ${d}`,
     manualLoaded: n => `Loaded ${n} samples from file`,
+    speakLabel: "Speak", recordLabel: "Record", voiceLabel: "Listen for \"wrong\"",
+    misfireTitle: "Misrecognition log", misfireHint: "Collect the cases that annoyed you and feed them back as training data",
+    misfireExport: "Export", misfireClear: "Clear",
+    voiceUnsupported: "This browser does not support speech recognition (Chrome/Edge do).",
+    voiceDenied: "Microphone permission is required.",
+    voiceNoted: "noted",
+    recNow: "recording",
     disclaimer: "A personal fan project. NARUTO is created by Masashi Kishimoto and belongs to Shueisha and its rights holders. This demo is unofficial and not affiliated with the original work, its publisher or the anime studio. Non-commercial; no original artwork, audio or other assets are used."
   }
 };
@@ -1405,6 +1463,7 @@ function setLang(lang) {
   try { localStorage.setItem("naruto_lang", lang); } catch (e) { /* 保存できなくても続行 */ }
   document.documentElement.lang = lang;
   applyStaticText();
+  syncToggles();
   setMode(state.mode);
 }
 
@@ -2136,6 +2195,7 @@ function maybeConfirm(candidate, motion, known) {
   els.confirmedSign.textContent = signText(candidate.label);
   addLog(`CONFIRM ${signText(candidate.label)} still=${Math.round(motion.stillMs)}ms score=${score.toFixed(2)} dist=${state.lastKnnDist.toFixed(2)}`);
   triggerConfirm(candidate.label);
+  if (state.mode !== "guide") speak(signLabel(candidate.label));
   state.frameHistory = [];                         // 次の印を前の印に引きずらせない
 
   if (state.mode === "guide") {
@@ -2361,12 +2421,16 @@ function advanceGuide(label) {
   const expected = r.signs[state.guideIndex];
   if (label !== expected) {
     state.guideWrong = label;
+    // 期待と違うものが確定した = 誤認識の候補。正解が分かっているので記録できる
+    recordMisfire(expected, label, null);
+    speak(LANG === "en" ? `${signLabel(label)}. No.` : `${signLabel(label)}。ちがう`);
     addLog(`GUIDE ちがう印: ${signDef(label).jp}（待っているのは ${signDef(expected).jp}）`);
     renderGuide();
     setTimeout(() => { state.guideWrong = null; renderGuide(); }, 900);
     return;
   }
   state.guideWrong = null;
+  speak(signLabel(label));
   state.guideIndex++;
   addLog(`GUIDE ${state.guideIndex}/${r.signs.length}: ${signDef(label).jp}`);
   if (state.guideIndex >= r.signs.length) {
@@ -2405,6 +2469,10 @@ function renderGuide() {
       <div class="count">${t("guideCount", i, total)}</div>`;
   }
 
+  if (i < total && state.lastSpokenNext !== `${r.id}:${i}`) {
+    state.lastSpokenNext = `${r.id}:${i}`;
+    if (!state.guideWrong) speak(LANG === "en" ? `Next, ${signLabel(r.signs[i])}` : `次は ${signLabel(r.signs[i])}`);
+  }
   els.guideSteps.innerHTML = r.signs.map((id, n) =>
     `<span class="gs ${n < i ? "done" : n === i ? "now" : ""}">${signDef(id).jp}</span>`).join("");
 }
@@ -2590,6 +2658,149 @@ function puffSmoke(n) {
   }
 }
 
+// ===== イライラ記録 =====
+//
+// 印を結んでいる間は両手が塞がるので、メモも取れないし画面も見ていられない。
+// そこで「読み上げ」と「自動記録」で、手を止めずに誤認識を拾えるようにする。
+//
+// 練習モードでは次に結ぶ印をアプリが知っているので、**違う印が確定したら
+// それが誤認識の候補**になる。入力は要らない。
+// 記録にはランドマークをそのまま残すので、書き出したJSONを
+// tools/rebuild_vectors.py に通せば、そのまま学習データとして効かせられる。
+// つまりイライラした場面が、そのまま改善の材料になる。
+
+function speak(text) {
+  if (!state.speak || !window.speechSynthesis) return;
+  try {
+    speechSynthesis.cancel();               // 前の読み上げが溜まらないように
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = LANG === "en" ? "en-US" : "ja-JP";
+    u.rate = 1.15;
+    speechSynthesis.speak(u);
+  } catch (e) { /* 読み上げできなくても本体は動かす */ }
+}
+
+// 誤認識を1件残す。landmarks込みなので後から学習データにできる。
+function recordMisfire(expected, got, note) {
+  if (!state.recording) return;
+  const f = state.latestFeature;
+  state.misfires.push({
+    at: new Date().toISOString(),
+    mode: state.mode,
+    expected: expected || null,          // 正しい印（練習モードなら分かる）
+    got: got || null,                    // アプリが出した印
+    note: note || null,
+    handsCount: f ? f.handsCount : null,
+    handedness: f ? f.handedness : null,
+    aspect: cameraAspect(),
+    camWidth: els.video.videoWidth || null,
+    camHeight: els.video.videoHeight || null,
+    distance: Number.isFinite(state.lastKnnDist) ? Number(state.lastKnnDist.toFixed(3)) : null,
+    blockReason: state.blockReason,
+    vector: f ? [...f.vector] : null,
+    landmarks: f ? f.rawLandmarks.map(h => h.map(p => ({ x: p.x, y: p.y, z: p.z }))) : null
+  });
+  renderMisfires();
+}
+
+function renderMisfires() {
+  const n = state.misfires.length;
+  els.misfireCount.textContent = String(n);
+  els.misfireExport.disabled = n === 0;
+  els.misfireClear.disabled = n === 0;
+  document.body.classList.toggle("recording", state.recording);
+  els.misfireList.innerHTML = state.misfires.slice(-12).reverse().map(m => {
+    const exp = m.expected ? signLabel(m.expected) : "?";
+    const got = m.got ? signLabel(m.got) : "—";
+    return `<div class="mfRow"><b>${escapeHtml(exp)}</b> → <span>${escapeHtml(got)}</span>
+      <span class="mfNote">${m.note ? escapeHtml(m.note) : (m.handsCount ? m.handsCount + (LANG === "en" ? "h" : "手") : "")}</span></div>`;
+  }).join("");
+}
+
+// 書き出したものは tools/rebuild_vectors.py にそのまま渡せる形にする。
+// 正しい印が分かっているものだけ samples に入れ、それ以外は notes に残す。
+function exportMisfires() {
+  const labeled = state.misfires.filter(m => m.expected && m.landmarks);
+  const payload = {
+    app: "naruto_misfire_collector",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    note: "誤認識した場面の記録。samples は expected を正解ラベルとして学習データに使える。",
+    samples: labeled.map(m => ({
+      label: m.expected, handsCount: m.handsCount, handedness: m.handedness,
+      aspect: m.aspect, camWidth: m.camWidth, camHeight: m.camHeight,
+      device: navigator.userAgent.slice(0, 120),
+      misrecognisedAs: m.got, distance: m.distance,
+      vector: m.vector, landmarks: m.landmarks
+    })),
+    unlabeled: state.misfires.filter(m => !m.expected).map(m => ({
+      at: m.at, got: m.got, note: m.note, blockReason: m.blockReason,
+      handsCount: m.handsCount, distance: m.distance
+    }))
+  };
+  const name = `naruto_misfires_${new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14)}.json`;
+  const text = JSON.stringify(payload, null, 2);
+  const file = new File([text], name, { type: "application/json" });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    navigator.share({ files: [file], title: name }).catch(() => downloadText(name, text));
+  } else {
+    downloadText(name, text);
+  }
+}
+
+function downloadText(name, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// 「ちがう」と言うだけで直前の確定を誤認識として残す。
+// 練習モードでは正解が分かっているので、そのラベルごと記録できる。
+let recog = null;
+const WRONG_WORDS = ["ちがう", "違う", "ちゃう", "だめ", "ダメ", "wrong", "no", "nope"];
+
+function startVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { setStatus(t("voiceUnsupported"), true); state.voice = false; syncToggles(); return; }
+  stopVoice();
+  recog = new SR();
+  recog.lang = LANG === "en" ? "en-US" : "ja-JP";
+  recog.continuous = true;
+  recog.interimResults = false;
+  recog.onresult = e => {
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const said = (e.results[i][0].transcript || "").trim().toLowerCase();
+      if (WRONG_WORDS.some(w => said.includes(w.toLowerCase()))) {
+        const expected = state.mode === "guide" && guideRecipe()
+          ? guideRecipe().signs[state.guideIndex] : null;
+        recordMisfire(expected, state.lastConfirmed, `声: ${said.slice(0, 20)}`);
+        addLog(`MISFIRE 音声で記録: ${said.slice(0, 20)}`);
+        speak(t("voiceNoted"));
+      }
+    }
+  };
+  recog.onend = () => { if (state.voice) { try { recog.start(); } catch (e) { /* 再開できないときは諦める */ } } };
+  recog.onerror = ev => { if (ev.error === "not-allowed") { state.voice = false; syncToggles(); setStatus(t("voiceDenied"), true); } };
+  try { recog.start(); } catch (e) { /* 既に動いていれば無視 */ }
+}
+
+function stopVoice() {
+  if (!recog) return;
+  const r = recog; recog = null;
+  try { r.onend = null; r.stop(); } catch (e) { /* 停止できなくても続行 */ }
+}
+
+function syncToggles() {
+  els.toggleSpeak.textContent = t("speakLabel") + (state.speak ? " ON" : " OFF");
+  els.toggleSpeak.classList.toggle("active", state.speak);
+  els.toggleRecord.textContent = t("recordLabel") + (state.recording ? " ON" : " OFF");
+  els.toggleRecord.classList.toggle("active", state.recording);
+  els.toggleVoice.textContent = t("voiceLabel") + (state.voice ? " ON" : " OFF");
+  els.toggleVoice.classList.toggle("active", state.voice);
+  renderMisfires();
+}
+
 function fireJutsu(recipe) {
   playJutsuSound();
   const st = ELEMENT_STYLE[recipe.element] || ELEMENT_STYLE.neutral;
@@ -2717,6 +2928,15 @@ function bindControls() {
   });
   els.directMode.addEventListener("click", () => setMode("direct"));
   els.langToggle.addEventListener("click", () => setLang(LANG === "ja" ? "en" : "ja"));
+  els.toggleSpeak.addEventListener("click", () => { state.speak = !state.speak; syncToggles(); });
+  els.toggleRecord.addEventListener("click", () => { state.recording = !state.recording; syncToggles(); });
+  els.toggleVoice.addEventListener("click", () => {
+    state.voice = !state.voice;
+    if (state.voice) { state.recording = true; startVoice(); } else { stopVoice(); }
+    syncToggles();
+  });
+  els.misfireExport.addEventListener("click", exportMisfires);
+  els.misfireClear.addEventListener("click", () => { state.misfires = []; renderMisfires(); });
   els.practiceMode.addEventListener("click", () => setMode("guide"));
   els.liveMode.addEventListener("click", () => setMode("free"));
   els.guidePick.addEventListener("change", () => {
@@ -2844,6 +3064,7 @@ function init() {
   bindControls();
   document.documentElement.lang = LANG;
   applyStaticText();
+  syncToggles();
   setMode("guide");   // 起動時は練習モード
   renderSequence();
   renderSampleCounts();
